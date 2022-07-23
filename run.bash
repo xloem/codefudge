@@ -44,9 +44,16 @@ done &
 	bash uploading.bash
 } &
 
+# download recent model to work off of
+read hash cid < w3put.log
+curl --head https://dweb.link/ipfs/"$b" | tr -d '\r' | grep -i ^location: | {
+	read location uri
+	wget --mirror "$uri"
+	cp -va *.ipfs.dweb.link/fudge-* 
+}
+
 # start grooming
 while true
 do
 	bash example_run_summarization.bash
 done
-
