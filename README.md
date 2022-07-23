@@ -22,11 +22,46 @@
 
 PLEASE EXPLAIN
 
+a start of an explanation:
+
+so basically codefudge is some scripts to train an adapter based on
+history of a git repository.
+
+hist.bash breaks the git history into *.file files containing commit
+message and file content, and *.commit files that contain the file
+diff within the commit.    at time of writing, each file changed in
+the commit is a separate pair, because i was low on gpu ram. that
+system could be improved.
+
+hist2json simply converts those files into data in the format the
+huggingface training scripts take. the *.file files are the input, and
+the *.commit (diff data) files are the output the model is trained on.
+
+so, the model would possibly learn to produce file changes that match
+pairs of commit messages and file contents.
+
+i tried this briefly and my loss got to around 1.5 or so (from 9 or
+10) within a few hours on the 16GB gpu i got with google colab pro+
+[before the session was terminated and gpu access disabled]
+
+the final trained adapter is only a few megabytes large, despite the
+model being several gigabytes.
+
+there's code to run a model forward in forward.py . it expects
+a .file on stdin and is supposed to produce a .commit on stdout .
+
 ## Notes 
 
-mostly random git repos
-- https://github.com/opencog/opencog
-- https://github.com/OGRECave/ogre
-- https://github.com/graphistry/pygraphistry
-above commit histories are too c++ heavy
+2022-07-23
+attempt from first run at https://ipfs.io/ipfs/bafybeib6dbyaesrndgi4awnbx52hvj2rdeyxka7wfulhtnl7icxfhq3jie
+doesn't have linebreaks, seems to only handle the first couple lines
 
+a nagging part of me keeps considering the pretraining content of the
+model. i'm not sure what t5 models are trained but, i imagine a
+generative or masked model would have more general-purpose knowledge
+and general language understanding, than something that was simply
+trained on translation or summarization type tasks, where word-mapping
+without comprehension could get you very far. i should probably look
+this up at some point. but anyway i'm thinking of switching to xlnet.
+
+xlnet seems the way to go next, although i'm spending some time stabilising a tokenizer training script
