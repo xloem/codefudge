@@ -1,5 +1,6 @@
 import sentencepiece as spm
 import transformers
+import charset_normalizer
 import glob
 
 model = 'google/long-t5-tglobal-base'
@@ -12,9 +13,14 @@ vanilla_tokenizer = transformers.AutoTokenizer.from_pretrained(model)
 def none2neg1(val):
     return val if val is not None else -1
 
+def input_text():
+    for file in glob.glob('../*.file') + glob.glob('../*.commit'):
+        yield str(charset_normalizer.from_path(file).best())
+
 spm.SentencePieceTrainer.train(
-    input=','.join(glob.glob('../*.file') + glob.glob('../*.commit')),
+    sentence_iterator=input_text(),
     model_prefix=model_name,
+    max_sentence_length=65536,
     vocab_size=vanilla_tokenizer.vocab_size - len(vanilla_tokenizer.additional_special_tokens_ids),
     unk_id=none2neg1(vanilla_tokenizer.unk_token_id),
     bos_id=none2neg1(vanilla_tokenizer.bos_token_id),
