@@ -6,6 +6,7 @@ model=fudge-long-t5-tglobal-base
 while true
 do
 	latest_checkpoint="$(ls -art "$model"/ | grep checkpoint | tail -n 1)"
+	rm -rf "$model"/"$model"
 	cp -va "$model"/"$latest_checkpoint" "$model"/"$model"
 	rm "$model"/"$model"/*/pytorch_model_head.bin
 	w3 put "$model"/"$model" | tee w3put.log
