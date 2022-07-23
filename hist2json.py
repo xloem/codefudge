@@ -4,7 +4,7 @@ import json, glob, random
 import charset_normalizer
 
 MAX_COMBINED = float('inf')
-MAX_INPUT = 1024
+MAX_INPUT = 2048 # 1024
 MAX_LABEL = float('inf')
 
 with open("test.json", "wt") as output:
