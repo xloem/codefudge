@@ -22,3 +22,11 @@
 
 PLEASE EXPLAIN
 
+## Notes 
+
+mostly random git repos
+- https://github.com/opencog/opencog
+- https://github.com/OGRECave/ogre
+- https://github.com/graphistry/pygraphistry
+above commit histories are too c++ heavy
+

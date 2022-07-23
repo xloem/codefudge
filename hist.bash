@@ -15,12 +15,13 @@ do
             git ls-tree "$commit"^ "$changed_file" | {
                 read mode type object path
                 {
+                    git log --encoding=utf-8 --pretty=format:%s%n%b "$logcommit"
                     echo "$changed_file";
+		    echo
                     if [ -n "$object" ]
                     then
                         git cat-file "$type" "$object"
                     fi
-                    git log --encoding=utf-8 --pretty=format:%s%n%b "$logcommit"
                 } > ../"$name".file
             }
             git log --patch --encoding=utf-8 --pretty=format: "$logcommit" -- "$changed_file" |grep --invert-match --text '^index .*\.\..*' > ../"$name".commit
