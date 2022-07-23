@@ -50,6 +50,8 @@ model being several gigabytes.
 there's code to run a model forward in forward.py . it expects
 a .file on stdin and is supposed to produce a .commit on stdout .
 
+EXPLANATION IS INSUFFICIENT
+
 ## Notes 
 
 2022-07-23
