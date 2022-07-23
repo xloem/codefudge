@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 label="$*"
 delim='<pad>'
-git log --all | sed -ne 's/^commit \([a-f0-9]*\)$/\1/p' | tac | for ((num=0; ; num++))
+git log --all | sed -ne 's/^commit \([a-f0-9]*\)$/\1/p' | shuf | for ((num=0; ; num++))
 do
     read commit
     
