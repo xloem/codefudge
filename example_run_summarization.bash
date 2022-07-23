@@ -3,10 +3,10 @@
 # example_run_summarization.py is a direct copy from the adapter-transformers repository
 
 MODEL=google/long-t5-tglobal-base
-BATCH_SIZE=1
-EPOCHS=16
-MAX_IN_LEN=128
-MAX_OUT_LEN=128
+BATCH_SIZE=2
+EPOCHS=1
+MAX_IN_LEN=16384
+MAX_OUT_LEN=16384
 
 if ! [ -e .already_downloaded_model ]
 then

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+label="$*"
 git log --all | sed -ne 's/^commit \([a-f0-9]*\)$/\1/p' | tac | for ((num=0; ; num++))
 do
     read commit
@@ -10,7 +11,7 @@ do
         if ! read changed_file first_word; then break; fi
         if [ "$first_word" != "Bin" ]
         then
-            name="$(printf %05d "$num")-$(printf %05d "$subnum")"
+            name="$label$(printf %05d "$num")-$(printf %05d "$subnum")"
             git ls-tree "$commit"^ "$changed_file" | {
                 read mode type object path
                 {

@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 
-import json, glob
+import json, glob, random
 import charset_normalizer
 
 with open("test.json", "wt") as output:
-    files = glob.glob('/home/user/src/*.file')
-    commits = glob.glob('/home/user/src/*.commit')
+    files = glob.glob('../*.file')
+    commits = glob.glob('../*.commit')
     files.sort()
     commits.sort()
-    for file, commit in zip(files, commits):
+    pairs = [*zip(files,commits)]
+    #random.shuffle(pairs)
+    for file, commit in pairs:
+        print(file, commit)
         assert file[:-len('file')] == commit[:-len('commit')]
         input = str(charset_normalizer.from_path(file).best())
         label = str(charset_normalizer.from_path(commit).best())

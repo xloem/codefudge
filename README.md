@@ -3,7 +3,7 @@
 ## Ingredients:
 
 1. one git repository of your choosing, with the same parent folder as this one
-2. bash, python, pytorch, and https://github.com/xloem/adaptor-transformers.git
+2. bash, python, pytorch, datasets, rouge-score and git+https://github.com/xloem/adapter-transformers.git@longt5
 3. gpu set up with pytorch
 4. the guts to handle possibly-exhausted disk space or ram if tight
 
