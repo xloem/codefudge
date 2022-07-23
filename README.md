@@ -53,7 +53,7 @@ a .file on stdin and is supposed to produce a .commit on stdout .
 ## Notes 
 
 2022-07-23
-attempt from first run at https://ipfs.io/ipfs/bafybeib6dbyaesrndgi4awnbx52hvj2rdeyxka7wfulhtnl7icxfhq3jie
+attempt from first run at https://bafybeib6dbyaesrndgi4awnbx52hvj2rdeyxka7wfulhtnl7icxfhq3jie.ipfs.dweb.link/summarization
 doesn't have linebreaks, seems to only handle the first couple lines
 
 a nagging part of me keeps considering the pretraining content of the
