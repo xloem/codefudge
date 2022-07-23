@@ -4,7 +4,7 @@ git log --all | sed -ne 's/^commit \([a-f0-9]*\)$/\1/p' | tac | for ((num=0; ; n
 do
     read commit
     
-    logcommit="$commit"^.."$commit"
+    logcommit="$commit" #^.."$commit"
     subnum=0
     git log --stat "$logcommit" | sed -ne 's/ \([^ ]*\) | \([^ ]*\).*/\1/p' | for ((subnum=0; ; subnum++))
     do
@@ -15,7 +15,7 @@ do
             git ls-tree "$commit"^ "$changed_file" | {
                 read mode type object path
                 {
-                    git log --encoding=utf-8 --pretty=format:%s%n%b "$logcommit"
+                    git log -1 --encoding=utf-8 "$logcommit" --pretty=format:%s%n%b
                     echo "$changed_file";
 		    echo
                     if [ -n "$object" ]
@@ -24,7 +24,7 @@ do
                     fi
                 } > ../"$name".file
             }
-            git log --patch --encoding=utf-8 --pretty=format: "$logcommit" -- "$changed_file" |grep --invert-match --text '^index .*\.\..*' > ../"$name".commit
+            git log -1 --patch --follow --find-renames --encoding=utf-8 --pretty=format: "$logcommit" -- "$changed_file" |grep --invert-match --text '^index .*\.\..*' > ../"$name".commit
             subnum=$((subnum+1))
         fi
     done
