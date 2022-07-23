@@ -22,7 +22,7 @@ do
                     then
                         git cat-file "$type" "$object"
                     fi
-                } > ../"$name".file
+	    } | python3 -c 'import charset_normalizer, sys; sys.stdout.write(str(charset_normalizer.from_fp(sys.stdin.buffer).best()))' > ../"$name".file
             }
             git log -1 --patch --follow --find-renames --encoding=utf-8 --pretty=format: "$logcommit" -- "$changed_file" |grep --invert-match --text '^index .*\.\..*' > ../"$name".commit
             subnum=$((subnum+1))
