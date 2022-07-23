@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 label="$*"
+delim='<pad>'
 git log --all | sed -ne 's/^commit \([a-f0-9]*\)$/\1/p' | tac | for ((num=0; ; num++))
 do
     read commit
@@ -16,7 +17,7 @@ do
                 read mode type object path
                 {
                     git log -1 --encoding=utf-8 "$logcommit" --pretty=format:%s%n%b
-                    echo "$changed_file";
+                    echo "$delim$changed_file$delim";
 		    echo
                     if [ -n "$object" ]
                     then
