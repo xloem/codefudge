@@ -7,9 +7,9 @@ do
     
     logcommit="$commit" #^.."$commit"
     subnum=0
-    git log --stat "$logcommit" | sed -ne 's/ \([^ ]*\) | \([^ ]*\).*/\1/p' | for ((subnum=0; ; subnum++))
+    git log -1 --stat "$logcommit" | sed -ne 's/ \([^ ]*\) | \([^ ]*\).*/\1/p' | for ((subnum=0; ; subnum++))
     do
-        if ! read changed_file first_word; then break; fi
+        if ! read changed_file first_word rest; then break; fi
         if [ "$first_word" != "Bin" ]
         then
             name="$label$(printf %05d "$num")-$(printf %05d "$subnum")"

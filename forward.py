@@ -2,7 +2,7 @@ import sys
 import transformers
 
 model = 'google/long-t5-tglobal-base'
-adapter = 'output/summarization'
+adapter = f'fudge-{model.split("/")[-1]}/summarization'
 
 config = transformers.AutoConfig.from_pretrained(model)
 tokenizer = transformers.AutoTokenizer.from_pretrained(model)
