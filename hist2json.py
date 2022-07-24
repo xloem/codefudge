@@ -3,7 +3,7 @@
 import json, glob, os, random
 import charset_normalizer
 
-MAX_INPUT = 4*65536 # 16GB GPU?
+MAX_INPUT = 8*65536 # not seeming to run into a bound to this on a 16GB GPU (4x64k worked fine); maybe it is trimmed elsewhere, or unbounded
 delim = '<pad>'
 
 with open("test.json", "wt") as output:
