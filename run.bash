@@ -41,7 +41,7 @@ done &
 	git config user.email 0xloem@gmail.com
 	git config user.name 'John Doe / Karl Semich'
 	sleep 60
-	bash uploading.bash
+	bash -vx uploading.bash
 } &
 
 # download recent model to work off of
