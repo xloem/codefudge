@@ -4,15 +4,17 @@ delim='<pad>'
 git log --all | sed -ne 's/^commit \([a-f0-9]*\)$/\1/p' | shuf | for ((num=0; ; num++))
 do
     read commit
+
+    rm -rf ../"$label$(printf %05d "$num")-"*
     
-    logcommit="$commit" #^.."$commit"
-    subnum=0
+    logcommit="$commit"
     git log -1 --stat "$logcommit" | sed -ne 's/ \([^ ]*\) | \([^ ]*\).*/\1/p' | for ((subnum=0; ; subnum++))
     do
         if ! read changed_file first_word rest; then break; fi
         if [ "$first_word" != "Bin" ]
         then
             name="$label$(printf %05d "$num")-$(printf %05d "$subnum")"
+            echo "$name $commit $changed_file $first_word $rest"
             git ls-tree "$commit"^ "$changed_file" | {
                 read mode type object path
                 {
