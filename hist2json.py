@@ -1,27 +1,45 @@
 #!/usr/bin/env python3
 
-import json, glob, random
+import json, glob, os, random
 import charset_normalizer
 
-MAX_COMBINED = float('inf')
-MAX_INPUT = 16384 # note this is bytes not tokens, so it could go higher
-MAX_LABEL = float('inf')
+MAX_INPUT = 4*65536 # 16GB GPU?
+delim = '<pad>'
 
 with open("test.json", "wt") as output:
-    pairs = ((filename, filename[:-len('.file')] + '.commit') for filename in glob.glob('../*.file'))
-    for file, commit in pairs:
-        assert file[:-len('file')] == commit[:-len('commit')]
-        try:
-            input = charset_normalizer.from_path(file).best()
-            label = charset_normalizer.from_path(commit).best()
-            assert input is not None
-            assert label is not None
-            input = str(input)
-            label = str(label)
-        except:
+    commits = set()
+    for filename in os.listdir('..'):
+        if not filename.endswith('.file') or filename.endswith('.commit'):
             continue
-        if len(input) + len(label) < MAX_COMBINED and len(input) < MAX_INPUT and len(label) < MAX_LABEL and len(input) > 0 and len(label) > 0:
-            print(file, len(input), commit, len(label))
+        commit = filename.split('-', 1)[0]
+        if commit in commits:
+            continue
+        commits.add(commit)
+        files = glob.glob(os.path.join('..', commit + '-*.file'))
+        random.shuffle(files)
+        idx = 0
+        for filename in files[:4]:
+            idx += 1
+            diff = filename[:-len('file')] + 'commit'
+            try:
+                input = str(charset_normalizer.from_path(filename).best() or '')
+                label = str(charset_normalizer.from_path(diff).best() or '')
+                assert input and label
+            except Exception as exc:
+                continue
+            if len(input) > MAX_INPUT:
+                continue
+            # add data from other files in the commit
+            others = [fn for fn in files if fn != filename]
+            random.shuffle(others)
+            while len(input) < MAX_INPUT and len(others):
+                other = str(charset_normalizer.from_path(others.pop()).best() or '')
+                try:
+                    other = delim + other.split(delim, 1)[1] # remove commit message
+                except:
+                    continue
+                input += other[:MAX_INPUT-len(input)]
+            print(filename, len(input), commit, len(label))
             output.write(json.dumps({
                 'input': input,
                 'label': label,
