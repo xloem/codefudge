@@ -53,6 +53,7 @@ curl --head https://dweb.link/ipfs/"$cid" | tr -d '\r' | grep -i ^location: | {
 }
 
 # start grooming
+sleep 60
 while true
 do
 	nice -n -19 bash example_run_summarization.bash
