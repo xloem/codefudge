@@ -8,7 +8,7 @@
 } | while read repo name
 do {
 	cd ..
-	git clone "$repo" name >/dev/null 2>&1
+	git clone "$repo" "$name" >/dev/null 2>&1
 	cd name
 	../codefudge/hist.bash "$name" >/dev/null 2>&1
 } & done
