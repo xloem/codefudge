@@ -2,7 +2,7 @@ import transformers
 import json, os, pickle
 
 models = ['google/long-t5-tglobal-base','xlnet-base-cased','transfo-xl-wt103']
-tokens = ['\n', ' ', '{', '}']
+tokens = ['\r', '\n', '\t', ' ', '\\', '{', '}', '<', '>', '^', '~', '`']
 
 for model in models:
     model_name = 'fudge-' + model.split('/')[-1]
