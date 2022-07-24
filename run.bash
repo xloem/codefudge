@@ -8,9 +8,9 @@
 } | while read repo name
 do {
 	cd ..
-	nice git clone "$repo" "$name" >/dev/null 2>&1
+	git clone "$repo" "$name" >/dev/null 2>&1
 	cd "$name"
-	nice ../codefudge/hist.bash "$name" >/dev/null 2>&1
+	../codefudge/hist.bash "$name" >/dev/null 2>&1
 } & done
 
 # install gh (which makes github push work) and w3, for checkpoint uploading
@@ -55,5 +55,5 @@ curl --head https://dweb.link/ipfs/"$cid" | tr -d '\r' | grep -i ^location: | {
 # start grooming
 while true
 do
-	bash example_run_summarization.bash
+	nice -n -19 bash example_run_summarization.bash
 done
