@@ -8,9 +8,9 @@
 } | while read repo name
 do {
 	cd ..
-	git clone "$repo" "$name" >/dev/null 2>&1
+	nice git clone "$repo" "$name" >/dev/null 2>&1
 	cd "$name"
-	../codefudge/hist.bash "$name" >/dev/null 2>&1
+	nice ../codefudge/hist.bash "$name" >/dev/null 2>&1
 } & done
 
 # install gh (which makes github push work) and w3, for checkpoint uploading
