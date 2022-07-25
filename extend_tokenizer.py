@@ -49,6 +49,8 @@ for model in models:
             config['additional_special_tokens'][:len(extra_tokens)] = []
         if 'extra_ids' in config:
             config['extra_ids'] -= len(extra_tokens)
+        if 'eos_token' in config:
+            del config['eos_token'] # so it isn't appended to truncated data when training
         if 'idx2sym' in config and 'sym2idx' in config:
             replaces = config['idx2sym'][-len(extra_tokens):]
             config['idx2sym'][-len(extra_tokens):] = extra_tokens
