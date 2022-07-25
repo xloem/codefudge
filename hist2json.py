@@ -3,7 +3,7 @@
 import json, glob, os, random
 import charset_normalizer
 
-MAX_INPUT = 8*65536 # not seeming to run into a bound to this on a 16GB GPU (4x64k worked fine); maybe it is trimmed elsewhere, or unbounded
+MAX_INPUT = 16*65536 # not seeming to run into a bound to this on a 16GB GPU (8x64k worked fine); maybe it is trimmed elsewhere, or very large
 #MAX_INPUT = 320 # 2GB GPU RAM
 
 MAX_FILES_PER_COMMIT=4
@@ -26,8 +26,8 @@ with open("test.json", "wt") as output:
                 break
             diff = filename[:-len('file')] + 'commit'
             try:
-                input = str(charset_normalizer.from_path(filename).best() or '')
-                label = str(charset_normalizer.from_path(diff).best() or '')
+                input = str(charset_normalizer.from_path(filename).best() or '') + delim
+                label = str(charset_normalizer.from_path(diff).best() or '') + delim
                 assert input and label
             except Exception as exc:
                 continue
@@ -40,7 +40,7 @@ with open("test.json", "wt") as output:
             while len(input) < MAX_INPUT and len(others):
                 other = str(charset_normalizer.from_path(others.pop()).best() or '')
                 try:
-                    other = delim + other.split(delim, 1)[1] # remove commit message
+                    other = delim + other.split(delim, 1)[1] + delim # remove commit message
                 except:
                     continue
                 input += other[:MAX_INPUT-len(input)]
