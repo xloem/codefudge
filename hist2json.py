@@ -40,7 +40,7 @@ with open("test.json", "wt") as output:
             while len(input) < MAX_INPUT and len(others):
                 other = str(charset_normalizer.from_path(others.pop()).best() or '')
                 try:
-                    other = delim + other.split(delim, 1)[1] + delim # remove commit message
+                    other = other.split(delim, 1)[1] + delim # remove commit message, keep filename starting with trailing pad, then add trailing pad to body
                 except:
                     continue
                 input += other[:MAX_INPUT-len(input)]
