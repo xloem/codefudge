@@ -19,13 +19,11 @@ model.set_active_adapters('summarization')
 if __name__ == '__main__':
     print('tokenizing ...')
     model_inputs = tokenizer(sys.stdin.read(), return_tensors='pt')
-    all_tokens = [*range(len(tokenizer))]
+    all_tokens = [id for token, id in tokenizer.vocab.items() if token != '</s>']
+    all_tokens.sort()
     def patfn(batch_id, input_ids):
         sys.stdout.write(tokenizer.decode(input_ids[-1]))
         sys.stdout.flush()
         return all_tokens
     print('generating ...')
     output_token_ids = model.generate(**model_inputs, max_new_tokens=4096, prefix_allowed_tokens_fn=patfn)
-    print(tokenizer.decode(output_token_ids))
-    #with tokenizer.as_target_tokenizer():
-    #    print(tokenizer.decode(output_token_ids[0]))
