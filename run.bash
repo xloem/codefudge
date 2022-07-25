@@ -6,6 +6,7 @@
 	echo https://github.com/graphistry/pygraphistry graphistry
 	echo https://github.com/opencog/opencog opencog
 	echo https://github.com/searx/searx searx
+	echo https://review.coreboot.org/coreboot.git  coreboot
 } | while read repo name
 do {
 	cd ..
