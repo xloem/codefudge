@@ -6,7 +6,7 @@ model=fudge-long-t5-tglobal-base
 while true
 do
 	rm -rf "$model"/"$model"
-	latest_checkpoint="$(dirname "$(dirname "$(ls -t "$model"/*/checkpoint-*/pytorch_adapter.bin "$model"/*/pytorch_adapter.bin | head -n 1)")")"
+	latest_checkpoint="$(dirname "$(dirname "$(ls -t "$model"/checkpoint-*/*/pytorch_adapter.bin "$model"/*/pytorch_adapter.bin | head -n 1)")")"
 	cp -va "$latest_checkpoint" "$model"/"$model"
 	find "$model"/"$model" -name pytorch_model_head.bin | xargs rm
 	w3 put "$model"/"$model" | tee w3put.log
