@@ -4,7 +4,7 @@ import json, glob, os, random
 import charset_normalizer
 
 MAX_INPUT = 8*65536 # not seeming to run into a bound to this on a 16GB GPU (4x64k worked fine); maybe it is trimmed elsewhere, or unbounded
-MAX_INPUT = 320 # 2GB GPU RAM
+#MAX_INPUT = 320 # 2GB GPU RAM
 
 MAX_FILES_PER_COMMIT=4
 delim = '<pad>'
