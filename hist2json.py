@@ -47,6 +47,6 @@ with open("test.json", "wt") as output:
             print(filename, len(input), commit, len(label))
             output.write(json.dumps({
                 'input': input,
-                'label': label,
+                'label': label + '</s>',
             }))
             output.write('\n')
