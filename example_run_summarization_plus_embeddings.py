@@ -479,11 +479,6 @@ def main():
                             use_auth_token=True if model_args.use_auth_token else None,
                         )
                     )
-                trainer_save_model_wrapped = trainer.save_model
-                def trainer_save_model_wrapper():
-                    model.save_embeddings(adapter_args.output_dir + "/embeddings", "custom")
-                    trainer_save_model_wrapped()
-                trainer.save_model = trainer_save_model_wrapper
         # optionally load a pre-trained language adapter
         if adapter_args.load_lang_adapter:
             # resolve the language adapter config
@@ -710,6 +705,12 @@ def main():
         data_collator=data_collator,
         compute_metrics=compute_metrics if training_args.predict_with_generate else None,
     )
+    if model_args.tokenizer_name:
+        trainer_save_model_wrapped = trainer.save_model
+        def trainer_save_model_wrapper():
+            model.save_embeddings(training_args.output_dir + "/embeddings", "custom")
+            trainer_save_model_wrapped()
+        trainer.save_model = trainer_save_model_wrapper
     if data_args.patience and data_args.patience > 0:
         callback = EarlyStoppingCallback(early_stopping_patience=data_args.patience)
         trainer.add_callback(callback)
