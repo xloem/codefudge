@@ -3,7 +3,7 @@ label="$*"
 delim='<pad>'
 git log --all | sed -ne 's/^commit \([a-f0-9]*\)$/\1/p' | shuf | for ((num=0; ; num++))
 do
-    read commit
+    if ! read commit; then break; fi
 
     rm -rf ../"$label$(printf %05d "$num")-"*
     
