@@ -5,10 +5,10 @@ w3 --version || {
 model=fudge-long-t5-tglobal-base
 while true
 do
-	latest_checkpoint="$(dirname "$(ls -t "$model"/*/pytorch_adapter.bin | head -n 1)")"
 	rm -rf "$model"/"$model"
-	cp -va "$model"/"$latest_checkpoint" "$model"/"$model"
-	rm "$model"/"$model"/*/pytorch_model_head.bin
+	latest_checkpoint="$(dirname "$(dirname "$(ls -t "$model"/*/checkpoint-*/pytorch_adapter.bin "$model"/*/pytorch_adapter.bin | head -n 1)")")"
+	cp -va "$latest_checkpoint" "$model"/"$model"
+	find "$model"/"$model" -name pytorch_model_head.bin | xargs rm
 	w3 put "$model"/"$model" | tee w3put.log
 	git pull --no-edit
 	git add w3put.log
