@@ -3,11 +3,15 @@
 # example_run_summarization.py is a direct copy from the adapter-transformers repository
 
 MODEL=google/long-t5-tglobal-base
+EPOCHS=1
+GRAD_ACCUM=2
+
 # 16 GB VRAM
 BATCH_SIZE=1
-GRAD_ACCUM=2
-EPOCHS=1
 MAX_OUT_LEN=2048
+# 2 GB VRAM
+MAX_OUT_LEN=80
+
 DATAFILE=test.json
 OUTPUT_DIR=fudge-"${MODEL##*/}"
 

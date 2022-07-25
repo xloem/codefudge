@@ -4,6 +4,9 @@ import json, glob, os, random
 import charset_normalizer
 
 MAX_INPUT = 8*65536 # not seeming to run into a bound to this on a 16GB GPU (4x64k worked fine); maybe it is trimmed elsewhere, or unbounded
+MAX_INPUT = 320 # 2GB GPU RAM
+
+MAX_FILES_PER_COMMIT=4
 delim = '<pad>'
 
 with open("test.json", "wt") as output:
@@ -18,8 +21,9 @@ with open("test.json", "wt") as output:
         files = glob.glob(os.path.join('..', commit + '-*.file'))
         random.shuffle(files)
         idx = 0
-        for filename in files[:4]:
-            idx += 1
+        for filename in files:
+            if idx >= MAX_FILES_PER_COMMIT:
+                break
             diff = filename[:-len('file')] + 'commit'
             try:
                 input = str(charset_normalizer.from_path(filename).best() or '')
@@ -29,6 +33,7 @@ with open("test.json", "wt") as output:
                 continue
             if len(input) > MAX_INPUT:
                 continue
+            idx += 1
             # add data from other files in the commit
             others = [fn for fn in files if fn != filename]
             random.shuffle(others)
