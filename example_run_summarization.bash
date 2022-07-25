@@ -9,8 +9,10 @@ GRAD_ACCUM=2
 # 16 GB VRAM
 BATCH_SIZE=1
 MAX_OUT_LEN=2048
+# 8 GB VRAM
+MAX_OUT_LEN=1152
 # 2 GB VRAM
-#MAX_OUT_LEN=80
+#MAX_OUT_LEN=80 # tradeoff between this and the input size
 
 DATAFILE=test.json
 OUTPUT_DIR=fudge-"${MODEL##*/}"
