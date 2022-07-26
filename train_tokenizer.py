@@ -18,7 +18,9 @@ print('Done')
 def input_text():
     for file in files:
         try:
-            yield str(charset_normalizer.from_path(file).best())
+            data = str(charset_normalizer.from_path(file).best())
+            data.encode() # catches unicode encoding issues
+            yield data
         except:
             continue
 #
