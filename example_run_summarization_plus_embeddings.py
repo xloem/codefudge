@@ -124,7 +124,7 @@ class ModelArguments:
         },
     )
     old_tokenizer_path: Optional[str] = field(
-        default=None
+        default=None,
         metadata={
             "help": "Path to previous tokenizer, when switching tokenizers, to copy embeddings from."
         }
