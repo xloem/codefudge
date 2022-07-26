@@ -722,9 +722,9 @@ def main():
     )
     if model_args.tokenizer_name:
         trainer_save_model_wrapped = trainer.save_model
-        def trainer_save_model_wrapper(*params, **kwparams):
-            model.save_embeddings(training_args.output_dir, "custom")
-            trainer_save_model_wrapped(*params, **kwparams)
+        def trainer_save_model_wrapper(output_dir = None, *params, **kwparams):
+            model.save_embeddings(output_dir or training_args.output_dir, "custom")
+            trainer_save_model_wrapped(output_dir, *params, **kwparams)
         trainer.save_model = trainer_save_model_wrapper
     if data_args.patience and data_args.patience > 0:
         callback = EarlyStoppingCallback(early_stopping_patience=data_args.patience)
