@@ -117,6 +117,18 @@ class ModelArguments:
             "the model's position embeddings."
         },
     )
+    train_embeddings: Optional[bool] = field(
+        default=True,
+        metadata={
+            "help": "Whether to train embeddings alongside the adapter if using a custom tokenizer."
+        },
+    )
+    old_tokenizer_path: Optional[str] = field(
+        default=None
+        metadata={
+            "help": "Path to previous tokenizer, when switching tokenizers, to copy embeddings from."
+        }
+    )
 
 
 @dataclass
@@ -456,14 +468,17 @@ def main():
                     config=adapter_config,
                     load_as=task_name,
                 )
-                if model_args.tokenizer_name:
+                if model_args.tokenizer_name and model_args.old_tokenizer_path is None:
                     try:
-                        model.load_embeddings(
-                            adapter_args.load_adapter + '/embeddings',
-                            "custom"
-                        )
+                        model.load_embeddings(model_args.tokenizer_name, "custom")
                     except:
-                        pass
+                        try:
+                            model.load_embeddings(
+                                adapter_args.load_adapter + '/embeddings',
+                                "custom"
+                            )
+                        except:
+                            pass
             # otherwise, add a fresh adapter
             else:
                 model.add_adapter(task_name, config=adapter_config)
@@ -472,7 +487,7 @@ def main():
                     model.add_embeddings(
                         "custom", tokenizer,
                         "default", AutoTokenizer.from_pretrained(
-                            model_args.model_name_or_path,
+                            model_args.old_tokenizer_path or model_args.model_name_or_path,
                             cache_dir=model_args.cache_dir,
                             use_fast=model_args.use_fast_tokenizer,
                             revision=model_args.model_revision,
@@ -496,7 +511,7 @@ def main():
         else:
             lang_adapter_name = None
         # Freeze all model weights except of those of this adapter
-        model.train_adapter([task_name], train_embeddings=True)
+        model.train_adapter([task_name], train_embeddings=model_args.train_embeddings)
         # Set the adapters to be used in every forward pass
         if lang_adapter_name:
             model.set_active_adapters(ac.Stack(lang_adapter_name, task_name))
@@ -707,9 +722,9 @@ def main():
     )
     if model_args.tokenizer_name:
         trainer_save_model_wrapped = trainer.save_model
-        def trainer_save_model_wrapper():
-            model.save_embeddings(training_args.output_dir + "/embeddings", "custom")
-            trainer_save_model_wrapped()
+        def trainer_save_model_wrapper(*params, **kwparams):
+            model.save_embeddings(training_args.output_dir, "custom")
+            trainer_save_model_wrapped(*params, **kwparams)
         trainer.save_model = trainer_save_model_wrapper
     if data_args.patience and data_args.patience > 0:
         callback = EarlyStoppingCallback(early_stopping_patience=data_args.patience)

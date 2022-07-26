@@ -8,9 +8,10 @@ GRAD_ACCUM=2
 
 # 16 GB VRAM
 BATCH_SIZE=1
-MAX_OUT_LEN=2048
+#MAX_OUT_LEN=2168 # without training embeddings, this worked for me for a few thousand steps
+MAX_OUT_LEN=2160 # with training embeddings; 2164 failed after 5434
 # 8 GB VRAM
-MAX_OUT_LEN=1152
+#MAX_OUT_LEN=1152
 # 2 GB VRAM
 #MAX_OUT_LEN=80 # tradeoff between this and the input size
 
@@ -21,13 +22,8 @@ mkdir -p "$OUTPUT_DIR"
 if ! [ -e "$OUTPUT_DIR"/.already_downloaded_model ]
 then
     echo 'downloading groomed base model ...'
-    python3 example_run_summarization.py  --model_name_or_path "$MODEL" --do_train --output_dir "$OUTPUT_DIR/tmp" --per_device_train_batch_size="$BATCH_SIZE" --overwrite_output_dir --predict_with_generate --train_file "$DATAFILE" --train_adapter True --num_train_epochs 1 --max_train_samples 1 --max_target_length "$MAX_OUT_LEN" && touch "$OUTPUT_DIR"/.already_downloaded_model
+    python3 example_run_summarization.py  --model_name_or_path "$MODEL" --do_train --output_dir "$OUTPUT_DIR/tmp" --per_device_train_batch_size="$BATCH_SIZE" --overwrite_output_dir --predict_with_generate --train_file "$DATAFILE" --train_adapter True --num_train_epochs 1 --max_train_samples 1 --max_target_length "$MAX_OUT_LEN" >/dev/null && touch "$OUTPUT_DIR"/.already_downloaded_model
     rm -rf "$OUTPUT_DIR"/tmp
-fi
-if ! [ -e "$OUTPUT_DIR"/extended_tokenizer ]
-then
-	echo "extending tokenizers ..."
-	python3 extend_tokenizer.py
 fi
 if [ -e "$OUTPUT_DIR"/summarization/adapter_config.json ]
 then
@@ -38,8 +34,14 @@ then
 	DATAFILE="$REAL_DATAFILE"
 
 	echo continuing grooming of adapter ... machine learning models suffer much less than human beings when groomed for behaviors.
-	TRANSFORMERS_OFFLINE=1 python3 example_run_summarization.py --tokenizer_name "$OUTPUT_DIR"/extended_tokenizer --load_adapter "$OUTPUT_DIR"/summarization --gradient_accumulation_steps "$GRAD_ACCUM" --model_name_or_path "$MODEL" --do_train --output_dir "$OUTPUT_DIR" --per_device_train_batch_size="$BATCH_SIZE" --overwrite_output_dir --predict_with_generate --train_file "$DATAFILE" --train_adapter True --num_train_epochs "$EPOCHS" --max_target_length "$MAX_OUT_LEN"
+	TRANSFORMERS_OFFLINE=1 python3 example_run_summarization_plus_embeddings.py --learning_rate 2.5e-05 --tokenizer_name "$OUTPUT_DIR" --load_adapter "$OUTPUT_DIR"/summarization --gradient_accumulation_steps "$GRAD_ACCUM" --model_name_or_path "$MODEL" --do_train --output_dir "$OUTPUT_DIR" --per_device_train_batch_size="$BATCH_SIZE" --overwrite_output_dir --predict_with_generate --train_file "$DATAFILE" --train_adapter True --num_train_epochs "$EPOCHS" --max_target_length "$MAX_OUT_LEN"
 else
+	if ! [ -e "$OUTPUT_DIR"/tokenizer ]
+	then
+		echo "extending tokenizers ..."
+		echo "if you have a tokenizer you would like to use, put it in $OUTPUT_DIR/tokenizer"
+		python3 extend_tokenizer.py
+	fi
 	# shuffle the data and sort by length
 	echo 'sorting data ...'
 	REAL_DATAFILE=live-"$DATAFILE"
@@ -47,5 +49,5 @@ else
 	DATAFILE="$REAL_DATAFILE"
 
 	echo grooming a new adapter ... machine learning models suffer much less than human beings when groomed for behaviors.
-	TRANSFORMERS_OFFLINE=1 python3 example_run_summarization.py --tokenizer_name "$OUTPUT_DIR"/extended_tokenizer --gradient_accumulation_steps "$GRAD_ACCUM" --model_name_or_path "$MODEL" --do_train --output_dir "$OUTPUT_DIR" --per_device_train_batch_size="$BATCH_SIZE" --overwrite_output_dir --predict_with_generate --train_file "$DATAFILE" --train_adapter True --num_train_epochs "$EPOCHS" --max_target_length "$MAX_OUT_LEN"
+	TRANSFORMERS_OFFLINE=1 python3 example_run_summarization_plus_embeddings.py --tokenizer_name "$OUTPUT_DIR"/tokenizer --gradient_accumulation_steps "$GRAD_ACCUM" --model_name_or_path "$MODEL" --do_train --output_dir "$OUTPUT_DIR" --per_device_train_batch_size="$BATCH_SIZE" --overwrite_output_dir --predict_with_generate --train_file "$DATAFILE" --train_adapter True --num_train_epochs "$EPOCHS" --max_target_length "$MAX_OUT_LEN"
 fi

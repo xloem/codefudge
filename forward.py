@@ -8,13 +8,14 @@ model_name = f'fudge-{model.split("/")[-1]}'
 adapter = os.path.join(model_name, 'summarization')
 
 config = transformers.AutoConfig.from_pretrained(model)
-tokenizer = transformers.AutoTokenizer.from_pretrained(os.path.join(model_name, 'extended_tokenizer'))
+tokenizer = transformers.AutoTokenizer.from_pretrained(model_name)
 model = transformers.AutoModelForSeq2SeqLM.from_pretrained(model)
 model.resize_token_embeddings(len(tokenizer))
 
 adapter_config = transformers.AdapterConfig.load('pfeiffer', non_linearity=None, reduction_factor=None)
 model.load_adapter(adapter, config=adapter_config, load_as='summarization')
 model.set_active_adapters('summarization')
+model.load_embeddings(model_name, 'embeddings'), 'custom')
 
 if __name__ == '__main__':
     print('tokenizing ...')
