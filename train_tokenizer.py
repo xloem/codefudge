@@ -39,7 +39,7 @@ def input_text():
 
 tokenizer = tokenizers.Tokenizer(tokenizers.models.Unigram())
 trainer = tokenizers.trainers.UnigramTrainer(
-        vocab_size=vanilla_tokenizer.vocab_size - len(vanilla_tokenizer.additional_special_tokens_ids),
+        vocab_size=vanilla_tokenizer.vocab_size - 9, # 9 special tokens
         special_tokens=['<pad>', '<bos-1>', '<eos-1>', '<bos-2>', '<eos-2>', '<bos-3>', '<eos-3>', '<bos-4>', '<eos-4>'],
         max_piece_length=1024,
 )
