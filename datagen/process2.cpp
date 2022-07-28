@@ -78,6 +78,7 @@ int main(int argc, char **argv)
         {
             commit_oids.push_back(c.id());
         });
+        random_shuffle(commit_oids.begin(), commit_oids.end());
 
         int commits_output = 0;
         for (int commit_idx = 0; commits_output < max_commits_per_repo && commit_idx < commit_oids.size(); ++ commit_idx) {
