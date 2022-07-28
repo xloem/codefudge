@@ -1,0 +1,16 @@
+[package]
+name = "tinytokenizers"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "tinytokenizers"
+path = "src/tinytokenizers.rs"
+crate-type = ["staticlib"]
+
+[dependencies]
+cxx = "1.0"
+tokenizers = "0.11"
+
+[build-dependencies]
+cxx-build = "1.0"
