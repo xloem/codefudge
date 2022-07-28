@@ -1,21 +1,3 @@
-# start repos cloning and generating commit files
-{
-	echo https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git linux
-	echo https://github.com/TheAlgorithms/Python TheAlgorithms_Python
-	echo https://github.com/OGRECave/ogre ogre
-	echo https://github.com/graphistry/pygraphistry graphistry
-	echo https://github.com/opencog/opencog opencog
-	echo https://github.com/searx/searx searx
-	echo https://review.coreboot.org/coreboot.git  coreboot
-	echo https://github.com/kivy/kivy.git kivy
-} | while read repo name
-do {
-	cd ..
-	git clone "$repo" "$name" >/dev/null 2>&1
-	cd "$name"
-	../codefudge/hist.bash "$name" >/dev/null 2>&1
-} & done
-
 # install gh (which makes github push work) and w3, for checkpoint uploading
 curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
 chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
@@ -30,22 +12,7 @@ gh auth login
 w3 token
 
 # install python dependencies
-python3 -m pip install datasets sacremoses rouge-score git+https://github.com/xloem/adapter-transformers.git@longt5 torch
-
-# start generating test.json from commits
-while true
-do
-	python3 hist2json.py  >/dev/null
-	sleep 60
-done &
-
-# start uploading
-{
-	git config user.email 0xloem@gmail.com
-	git config user.name 'John Doe / Karl Semich'
-	sleep 60
-	bash -vx uploading.bash
-} &
+python3 -m pip install -U pip pynacl datasets sacremoses rouge-score git+https://github.com/xloem/adapter-transformers.git@longt5 torch
 
 # download recent model to work off of
 read hash cid < w3put.log
@@ -55,9 +22,14 @@ curl --head https://dweb.link/ipfs/"$cid" | tr -d '\r' | grep -i ^location: | {
 	cp -va *.ipfs.dweb.link/fudge-* .
 }
 
+# link data from google drive if present
+if [ -e ../drive/MyDrive/codefudge/test.json ]
+then
+	ln -s ../drive/MyDrive/codefudge/test.json
+fi
+
 # start grooming
-sleep 60
 while true
 do
-	nice -n -19 bash example_run_summarization.bash
+	bash example_run_summarization.bash
 done
