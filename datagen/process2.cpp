@@ -55,7 +55,9 @@ int main(int argc, char **argv)
     int max_commits_per_repo = 1;
     int seed = 0;
     unsigned int max_input_length = ~0;
-    unsigned int max_output_length = 1024;
+    unsigned int max_output_length = ~0; //1024;
+    unsigned int cycles_over_repos = ~0;
+    bool lengths_are_tokenized = false;
     bool cut_input = false;
     bool cut_output = false;
     string tokenizer_path = "tokenizer.json";
@@ -70,174 +72,161 @@ int main(int argc, char **argv)
 
     srand(seed);
 
-    for (char **pathptr = &argv[1]; pathptr != &argv[argc]; ++ pathptr)
+    for (unsigned int repo_cycle = 0; repo_cycle < cycles_over_repos; ++ repo_cycle)
     {
-        auto repository = repository::open(*pathptr);
-        static thread_local vector<oid> commit_oids;
-        repository.for_each_commit([](const commit & c)
+        for (char **pathptr = &argv[1]; pathptr != &argv[argc]; ++ pathptr)
         {
-            commit_oids.push_back(c.id());
-        });
-        random_shuffle(commit_oids.begin(), commit_oids.end());
-
-        int commits_output = 0;
-        for (int commit_idx = 0; commits_output < max_commits_per_repo && commit_idx < commit_oids.size(); ++ commit_idx) {
-            auto commit = repository.lookup_commit(commit_oids[commit_idx]);
-
-            static thread_local cppgit2::index possible_conflicts, merges;
-            cppgit2::diff diff;
-
-            // commit.id().to_hex_string()
-            // commit.message() commit.message_encoding()
-            // commit.parent(n)  commit.parent_count()
-            // commit.tree()
-
-
-            switch (commit.parent_count()) {
-            case 0:
-                diff = repository.create_diff_tree_to_tree(tree(), commit.tree());
-                break;
-            case 1:
-                diff = repository.create_diff_tree_to_tree(commit.parent(0).tree(), commit.tree());
-                break;
-            case 2:
-                possible_conflicts = repository.merge_commits(commit.parent(0), commit.parent(1));
-                merges.clear();
-                merges.read_tree(commit.tree());
-                diff = repository.create_diff_index_to_index(possible_conflicts, merges);
-                break;
-            default:
-                throw "multimerge";
-            }
-
-            diff.find_similar(); // finds renames, copies. can have options passed.
-            // diff.to_string()
-            // diff.for_each([](const cppgit2::diff::delta &, float) {})
-            // diff.print(diff:format, [](const diff
-
-            // OPTIMIZE: this selection of inputs can be done by randomizing a range of integers and picking by integers
-            // no need to enumerate them all in the next block
-
-            static thread_local rust::Box<Tokenizer> tokenizer = from_file(tokenizer_path);
-            static thread_local rust::Box<Encoding> tokenization = rust::Box<Encoding>::from_raw(nullptr);
-
-                // use of pointer here will be referencing temporaries.
-                // can likely use an oid pair ... or something
-            static thread_local unordered_map<pair<oid,oid>, string, oid_pair_hash> inputs;
-            //static thread_local unordered_map<pair<oid,oid>, vector<uint32_t>, oid_pair_hash> input_ids;
-            static thread_local vector<pair<oid,oid>> input_index;
-            diff.for_each([&](const cppgit2::diff::delta & need_eeg_and_blockchain, float progress) // pain shown
-            { // input files
-                auto old_id = need_eeg_and_blockchain.old_file().id();
-                if (!old_id.is_zero()) {
-                    blob content = repository.lookup_blob(need_eeg_and_blockchain.old_file().id());
-                    if (!content.is_binary()) {
-                        auto ident = make_pair<oid,oid>(
-                            need_eeg_and_blockchain.old_file().id(),
-                            need_eeg_and_blockchain.new_file().id()
-                        ); // .path()
-                        string & input = inputs[ident];
-                        input += file_name_start + need_eeg_and_blockchain.old_file().path() + file_name_end + file_content_start;
-                        input += string((char*)content.raw_contents(), content.raw_size());
-                        input += file_content_end;
-                        input_index.push_back(ident);
-                    }
-                }
-            });
-
-            static thread_local unordered_map<pair<oid,oid>, string, oid_pair_hash> outputs;
-            static thread_local vector<pair<oid,oid>> diff_oids;
-            diff.print(cppgit2::diff::format::patch, [&](
-                const cppgit2::diff::delta & need_eeg_and_blockchain,
-                const cppgit2::diff::hunk & hunk,
-                const cppgit2::diff::line & line)
+            auto repository = repository::open(*pathptr);
+            static thread_local vector<oid> commit_oids;
+            repository.for_each_commit([](const commit & c)
             {
-                auto ident = make_pair<oid,oid>(
-                    need_eeg_and_blockchain.old_file().id(),
-                    need_eeg_and_blockchain.new_file().id()
-                ); // .path()
-
-                if (!diff_oids.size()) {
-                    diff_oids.push_back(ident);
-                } else if (diff_oids.back() != ident) {
-                    diff_oids.push_back(ident);
-                }
-                string & patch = outputs[ident];
-                char origin = line.origin();
-                switch (origin) {
-                case '-': case '+': case ' ':
-                    patch += line.origin();
-                default:;
-                }
-                patch.append(line.content(), line.content_length());
-                /*tokenization = tokenizer->encode(patch, true);
-                size_t patch_size = tokenization->get_ids().size();
-                if (patch_token_ids.size() < max_output_length) {
-                    static thread_local string line_content;
-                    line_content = line.origin();
-                    line_content += line.content();
-                    tokenization = tokenizer->encode(line_content, true);
-                    if (cut_output || patch.size() + line.content_length() + 1 <= max_output_length) {
-                        patch += line.origin();
-                        patch += line.content();
-                        if (patch.size() > max_output_length) {
-                            patch.resize(max_output_length);
-                        }
-                    }
-                }*/
+                commit_oids.push_back(c.id());
             });
-
-            // we now have output data, indexed by diff_oids
-            size_t total = diff.size() - diff.size(cppgit2::diff::delta::type::unmodified);
-            random_shuffle(diff_oids.begin(), diff_oids.end());
-
-            int diffs_output = 0;
-            for(int diff_idx = 0; diffs_output < max_diffs_per_commit && diff_idx < total; ++ diff_idx) {
-                auto ident = diff_oids[diff_idx];
-                
-                string output = outputs[ident];
-                tokenization = tokenizer->encode(output, true);
-                size_t output_size = tokenization->get_ids().size();
-                if (output_size > max_output_length) {
-                    if (!cut_output) {
-                        continue;
-                    } else {
-                        // BUG: not cutting output due to tokenization funcs haven't implemented yet
-                    }
+            random_shuffle(commit_oids.begin(), commit_oids.end());
+    
+            int commits_output = 0;
+            for (int commit_idx = 0; commits_output < max_commits_per_repo && commit_idx < commit_oids.size(); ++ commit_idx) {
+                auto commit = repository.lookup_commit(commit_oids[commit_idx]);
+    
+                static thread_local cppgit2::index possible_conflicts, merges;
+                cppgit2::diff diff;
+    
+                // commit.id().to_hex_string()
+                // commit.message() commit.message_encoding()
+                // commit.parent(n)  commit.parent_count()
+                // commit.tree()
+    
+    
+                switch (commit.parent_count()) {
+                case 0:
+                    diff = repository.create_diff_tree_to_tree(tree(), commit.tree());
+                    break;
+                case 1:
+                    diff = repository.create_diff_tree_to_tree(commit.parent(0).tree(), commit.tree());
+                    break;
+                case 2:
+                    possible_conflicts = repository.merge_commits(commit.parent(0), commit.parent(1));
+                    merges.clear();
+                    merges.read_tree(commit.tree());
+                    diff = repository.create_diff_index_to_index(possible_conflicts, merges);
+                    break;
+                default:
+                    throw "multimerge";
                 }
-
-                string input = 
-                    input_start + message_start + commit.message() + message_end;
-                input += inputs[ident];
-                tokenization = tokenizer->encode(input, true);
-                size_t input_size = tokenization->get_ids().size();
-                static thread_local vector<pair<oid,oid>> input_index_2;
-                // first output context from other changed files
-                input_index_2 = diff_oids;
-                random_shuffle(input_index_2.begin(), input_index_2.end());
-                while (input_size < max_input_length && !input_index_2.empty()) {
-                    pair<oid,oid> & ident2 = input_index_2.back();
-                    if (ident2 != ident) {
-                        auto & more = inputs[ident2];
-                        tokenization = tokenizer->encode(more, false);
-                        size_t more_size = tokenization->get_ids().size();
-                        if (cut_input || input_size + more_size <= max_input_length) {
-                            input += inputs[ident2];
-                            input_size += more_size;
+    
+                diff.find_similar(); // finds renames, copies. can have options passed.
+                // diff.to_string()
+                // diff.for_each([](const cppgit2::diff::delta &, float) {})
+                // diff.print(diff:format, [](const diff
+    
+                // OPTIMIZE: this selection of inputs can be done by randomizing a range of integers and picking by integers
+                // no need to enumerate them all in the next block
+    
+                static thread_local rust::Box<Tokenizer> tokenizer = from_file(tokenizer_path);
+                static thread_local rust::Box<Encoding> tokenization = rust::Box<Encoding>::from_raw(nullptr);
+    
+                    // use of pointer here will be referencing temporaries.
+                    // can likely use an oid pair ... or something
+                static thread_local unordered_map<pair<oid,oid>, string, oid_pair_hash> inputs;
+                //static thread_local unordered_map<pair<oid,oid>, vector<uint32_t>, oid_pair_hash> input_ids;
+                static thread_local vector<pair<oid,oid>> input_index;
+                diff.for_each([&](const cppgit2::diff::delta & need_eeg_and_blockchain, float progress) // pain shown
+                { // input files
+                    auto old_id = need_eeg_and_blockchain.old_file().id();
+                    if (!old_id.is_zero()) {
+                        blob content = repository.lookup_blob(need_eeg_and_blockchain.old_file().id());
+                        if (!content.is_binary()) {
+                            auto ident = make_pair<oid,oid>(
+                                need_eeg_and_blockchain.old_file().id(),
+                                need_eeg_and_blockchain.new_file().id()
+                            ); // .path()
+                            string & input = inputs[ident];
+                            input += file_name_start + need_eeg_and_blockchain.old_file().path() + file_name_end + file_content_start;
+                            input += string((char*)content.raw_contents(), content.raw_size());
+                            input += file_content_end;
+                            input_index.push_back(ident);
                         }
                     }
-                    input_index_2.pop_back();
-                }
-                if (input_size < max_input_length) {
-                    // if room, add context from other files in the tree
-                    input_index_2 = input_index;
+                });
+    
+                static thread_local unordered_map<pair<oid,oid>, string, oid_pair_hash> outputs;
+                static thread_local vector<pair<oid,oid>> diff_oids;
+                diff.print(cppgit2::diff::format::patch, [&](
+                    const cppgit2::diff::delta & need_eeg_and_blockchain,
+                    const cppgit2::diff::hunk & hunk,
+                    const cppgit2::diff::line & line)
+                {
+                    auto ident = make_pair<oid,oid>(
+                        need_eeg_and_blockchain.old_file().id(),
+                        need_eeg_and_blockchain.new_file().id()
+                    ); // .path()
+    
+                    if (!diff_oids.size()) {
+                        diff_oids.push_back(ident);
+                    } else if (diff_oids.back() != ident) {
+                        diff_oids.push_back(ident);
+                    }
+                    string & patch = outputs[ident];
+                    char origin = line.origin();
+                    switch (origin) {
+                    case '-': case '+': case ' ':
+                        patch += line.origin();
+                    default:;
+                    }
+                    patch.append(line.content(), line.content_length());
+                });
+    
+                // we now have output data, indexed by diff_oids
+                size_t total = diff.size() - diff.size(cppgit2::diff::delta::type::unmodified);
+                random_shuffle(diff_oids.begin(), diff_oids.end());
+    
+                int diffs_output = 0;
+                for(int diff_idx = 0; diffs_output < max_diffs_per_commit && diff_idx < total; ++ diff_idx) {
+                    auto ident = diff_oids[diff_idx];
+
+                    size_t output_size = 0, input_size = 0;
+                    
+                    string output = outputs[ident];
+                    if (lengths_are_tokenized) {
+                        tokenization = tokenizer->encode(output, true);
+                        output_size = tokenization->get_ids().size();
+                        if (output_size > max_output_length) {
+                            if (!cut_output) {
+                                continue;
+                            } else {
+                                // BUG: not cutting output due to tokenization funcs haven't implemented yet
+                            }
+                        }
+                    } else {
+                        output_size = output.size();
+                    }
+    
+                    string input = 
+                        input_start + message_start + commit.message() + message_end;
+                    input += inputs[ident];
+                    
+                    if (lengths_are_tokenized) {
+                        tokenization = tokenizer->encode(input, true);
+                        input_size = tokenization->get_ids().size();
+                    } else {
+                        input_size = input.size();
+                    }
+
+                    static thread_local vector<pair<oid,oid>> input_index_2;
+                    // first output context from other changed files
+                    input_index_2 = diff_oids;
                     random_shuffle(input_index_2.begin(), input_index_2.end());
                     while (input_size < max_input_length && !input_index_2.empty()) {
                         pair<oid,oid> & ident2 = input_index_2.back();
-                        if (!outputs.count(ident2)) {
+                        if (ident2 != ident) {
                             auto & more = inputs[ident2];
-                            tokenization = tokenizer->encode(more, false);
-                            size_t more_size = tokenization->get_ids().size();
+                            size_t more_size;
+                            if (lengths_are_tokenized) {
+                                tokenization = tokenizer->encode(more, false);
+                                more_size = tokenization->get_ids().size();
+                            } else {
+                                more_size = more.size();
+                            }
                             if (cut_input || input_size + more_size <= max_input_length) {
                                 input += inputs[ident2];
                                 input_size += more_size;
@@ -245,30 +234,53 @@ int main(int argc, char **argv)
                         }
                         input_index_2.pop_back();
                     }
+                    if (input_size < max_input_length) {
+                        // if room, add context from other files in the tree
+                        input_index_2 = input_index;
+                        random_shuffle(input_index_2.begin(), input_index_2.end());
+                        while (input_size < max_input_length && !input_index_2.empty()) {
+                            pair<oid,oid> & ident2 = input_index_2.back();
+                            if (!outputs.count(ident2)) {
+                                auto & more = inputs[ident2];
+                                size_t more_size;
+                                if (lengths_are_tokenized) {
+                                    tokenization = tokenizer->encode(more, false);
+                                    more_size = tokenization->get_ids().size();
+                                } else {
+                                    more_size = more.size();
+                                }
+                                if (cut_input || input_size + more_size <= max_input_length) {
+                                    input += inputs[ident2];
+                                    input_size += more_size;
+                                }
+                            }
+                            input_index_2.pop_back();
+                        }
+                    }
+                    // BUG: haven't implemented functions in tokenizer to find offset, so not cutting input
+                    //if (input_size > max_input_length) {
+                    //    input.resize(max_input_length);
+                    //}
+    
+                    if (!input_size) {
+                        continue;
+                    }
+    
+                    static thread_local rapidjson::StringBuffer linebuf;
+                    static thread_local rapidjson::Writer<rapidjson::StringBuffer> lineout;
+                    linebuf.Clear();
+                    lineout.Reset(linebuf);
+                    lineout.StartObject();
+                    lineout.String("input", 5); lineout.String(input.data(), input.size());
+                    lineout.String("label", 5); lineout.String(output.data(), output.size());
+                    lineout.EndObject();
+                    linebuf.Put('\n');
+                    puts(linebuf.GetString());
+                    ++ diffs_output;
                 }
-                // BUG: haven't implemented functions in tokenizer to find offset, so not cutting input
-                //if (input_size > max_input_length) {
-                //    input.resize(max_input_length);
-                //}
-
-                if (!input_size) {
-                    continue;
+                if (diffs_output > 0) {
+                    ++ commits_output;
                 }
-
-                static thread_local rapidjson::StringBuffer linebuf;
-                static thread_local rapidjson::Writer<rapidjson::StringBuffer> lineout(linebuf);
-                linebuf.Clear();
-                //linedoc.Accept(lineout);
-                lineout.StartObject();
-                lineout.String("input", 5); lineout.String(input.data(), input.size());
-                lineout.String("label", 5); lineout.String(output.data(), output.size());
-                lineout.EndObject();
-                linebuf.Put('\n');
-                puts(linebuf.GetString());
-                ++ diffs_output;
-            }
-            if (diffs_output > 0) {
-                ++ commits_output;
             }
         }
     }
