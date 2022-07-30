@@ -4,7 +4,7 @@
 
 MODEL=google/long-t5-tglobal-base
 EPOCHS=2
-GRAD_ACCUM=2
+GRAD_ACCUM=1
 
 # 16 GB VRAM
 BATCH_SIZE=1
