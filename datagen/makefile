@@ -1,9 +1,11 @@
-TOKENIZERS_LDFLAGS=-ltinytokenizers -Ltinytokenizers/target/release -pthread -lssl -lcrypto -ldl
-TOKENIZERS_CPPFLAGS=-Itinytokenizers/target/cxxbridge/tinytokenizers/src
+#TOKENIZERS_LDLIBS=-ltinytokenizers -pthread -lssl -lcrypto -ldl
+#TOKENIZERS_LDFLAGS=-Ltinytokenizers/target/release
+#TOKENIZERS_CPPFLAGS=-Itinytokenizers/target/cxxbridge/tinytokenizers/src -DTOKENIZE
 #TOKENIZERS_DEPPATH=tinytokenizers/target/release/libtinytokenizers.a
 
-LDFLAGS=-lcppgit2 -lgit2 #$(TOKENIZERS_LDFLAGS)
+LDLIBS=-lcppgit2 -lgit2 $(TOKENIZERS_LDLIBS)
 CPPFLAGS=$(TOKENIZERS_CPPFLAGS)
+LDFLAGS=$(TOKENIZERS_CPPFLAGS)
 
 CXXFLAGS+=-ggdb -O0
 
