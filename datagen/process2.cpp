@@ -73,7 +73,7 @@ int main(int argc, char **argv)
     unsigned int seed = 0;
     unsigned int max_input_length = ~0;
     unsigned int max_output_length = ~0; //1024;
-    unsigned int cycles_over_repos = 1;//~0;
+    unsigned int cycles_over_repos = 2;//~0;
     #ifdef TOKENIZE
     bool lengths_are_tokenized = false;
     #endif
@@ -95,13 +95,13 @@ int main(int argc, char **argv)
 
     diff::options diff_options;
     diff_options.set_flags(
-        diff::options::flag::include_unmodified,
-        diff::options::flag::include_typechange,
-        diff::options::flag::ignore_filemode,
-        diff::options::flag::ignore_submodules,
-        diff::options::flag::indent_heuristic,
-        diff::options::flag::patience,
-        diff::options::flag::minimal,
+        diff::options::flag::include_unmodified |
+        diff::options::flag::include_typechange |
+        diff::options::flag::ignore_filemode |
+        diff::options::flag::ignore_submodules |
+        diff::options::flag::indent_heuristic |
+        diff::options::flag::patience |
+        diff::options::flag::minimal |
         diff::options::flag::show_binary
     );
 
@@ -166,6 +166,8 @@ int main(int argc, char **argv)
                 static thread_local unordered_map<pair<oid,oid>, string, oid_pair_hash> inputs;
                 //static thread_local unordered_map<pair<oid,oid>, vector<uint32_t>, oid_pair_hash> input_ids;
                 static thread_local vector<pair<oid,oid>> input_index;
+		input_index.clear();
+		inputs.clear();
                 diff.for_each([&](const cppgit2::diff::delta & need_eeg_and_blockchain, float progress) // pain shown
                 { // input files
                     auto old_id = need_eeg_and_blockchain.old_file().id();
@@ -176,19 +178,23 @@ int main(int argc, char **argv)
                                 need_eeg_and_blockchain.old_file().id(),
                                 need_eeg_and_blockchain.new_file().id()
                             ); // .path()
-                            string & input = inputs[ident];
-                            input += file_name_start + need_eeg_and_blockchain.old_file().path() + file_name_end + file_content_start;
-                            input += string((char*)content.raw_contents(), content.raw_size());
-                            input += file_content_end;
+                            if (!inputs.count(ident)) {
+                                string & input = inputs[ident];
+                                input += file_name_start + need_eeg_and_blockchain.old_file().path() + file_name_end + file_content_start;
+                                input += string((char*)content.raw_contents(), content.raw_size());
+                                input += file_content_end;
+                            }
                             input_index.push_back(ident);
                         }
                     }
                 });
 
-		cout <<  "input count: " << inputs.size() << endl;
+		//cout <<  "input count: " << inputs.size() << endl;
     
                 static thread_local unordered_map<pair<oid,oid>, string, oid_pair_hash> outputs;
                 static thread_local vector<pair<oid,oid>> diff_oids;
+                diff_oids.clear();
+                outputs.clear();
                 diff.print(cppgit2::diff::format::patch, [&](
                     const cppgit2::diff::delta & need_eeg_and_blockchain,
                     const cppgit2::diff::hunk & hunk,
@@ -214,7 +220,7 @@ int main(int argc, char **argv)
                     patch.append(line.content(), line.content_length());
                 });
 
-		cout <<  "output count: " << outputs.size() << endl;
+		//cout <<  "output count: " << outputs.size() << endl;
     
                 // we now have output data, indexed by diff_oids
                 size_t total = diff.size() - diff.size(cppgit2::diff::delta::type::unmodified);
@@ -223,7 +229,7 @@ int main(int argc, char **argv)
                 int diffs_output = 0;
                 for(int diff_idx = 0; diffs_output < max_diffs_per_commit && diff_idx < total; ++ diff_idx) {
                     auto ident = diff_oids[diff_idx];
-		    cout <<  "selecting " << ident.first.to_hex_string() << endl;
+		    //cout <<  "selecting " << ident.first.to_hex_string() << endl;
 
                     size_t output_size = 0, input_size = 0;
                     
@@ -263,12 +269,12 @@ int main(int argc, char **argv)
                     // first output context from other changed files
                     input_index_2 = diff_oids;
                     shuffle(input_index_2.begin(), input_index_2.end(), rng);
-		    cout <<  "input_size=" << input_size << endl;
-		    cout <<  "max_input_length=" << max_input_length << endl;
-		    cout <<  "input_index_2.size()=" << input_index_2.size() << endl;
+		    //cout <<  "input_size=" << input_size << endl;
+		    //cout <<  "max_input_length=" << max_input_length << endl;
+		    //cout <<  "input_index_2.size()=" << input_index_2.size() << endl;
                     while (input_size < max_input_length && !input_index_2.empty()) {
                         pair<oid,oid> & ident2 = input_index_2.back();
-		        cout <<  "considering " << ident.first.to_hex_string() << endl;
+		        //cout <<  "considering " << ident.first.to_hex_string() << endl;
                         if (ident2 != ident) {
                             auto & more = inputs[ident2];
                             size_t more_size;
@@ -287,18 +293,18 @@ int main(int argc, char **argv)
                             }
                         }
                         input_index_2.pop_back();
-		        cout <<  "input_size=" << input_size << endl;
-		        cout <<  "input_index_2.size()=" << input_index_2.size() << endl;
+		        //cout <<  "input_size=" << input_size << endl;
+		        //cout <<  "input_index_2.size()=" << input_index_2.size() << endl;
                     }
-		    cout <<  "input_size=" << input_size << endl;
-		    cout <<  "max_input_length=" << max_input_length << endl;
+		    //cout <<  "input_size=" << input_size << endl;
+		    //cout <<  "max_input_length=" << max_input_length << endl;
                     if (input_size < max_input_length) {
                         // if room, add context from other files in the tree
                         input_index_2 = input_index;
                         shuffle(input_index_2.begin(), input_index_2.end(), rng);
-		        cout <<  "input_size=" << input_size << endl;
-		        cout <<  "max_input_length=" << max_input_length << endl;
-		        cout <<  "input_index_2.size()=" << input_index_2.size() << endl;
+		        //cout <<  "input_size=" << input_size << endl;
+		        //cout <<  "max_input_length=" << max_input_length << endl;
+		        //cout <<  "input_index_2.size()=" << input_index_2.size() << endl;
                         while (input_size < max_input_length && !input_index_2.empty()) {
                             pair<oid,oid> & ident2 = input_index_2.back();
                             if (!outputs.count(ident2)) {
@@ -338,7 +344,6 @@ int main(int argc, char **argv)
                     lineout.String("input", 5); lineout.String(input.data(), input.size());
                     lineout.String("label", 5); lineout.String(output.data(), output.size());
                     lineout.EndObject();
-                    linebuf.Put('\n');
                     puts(linebuf.GetString());
                     ++ diffs_output;
                 }
