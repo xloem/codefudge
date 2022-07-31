@@ -73,7 +73,7 @@ int main(int argc, char **argv)
     unsigned int seed = 0;
     unsigned int max_input_length = ~0;
     unsigned int max_output_length = ~0; //1024;
-    unsigned int cycles_over_repos = ~0;
+    unsigned int cycles_over_repos = 1;//~0;
     #ifdef TOKENIZE
     bool lengths_are_tokenized = false;
     #endif
@@ -92,6 +92,18 @@ int main(int argc, char **argv)
     default_random_engine rng{seed};
 
     static thread_local unordered_map<string, repo_commits> repos;
+
+    diff::options diff_options;
+    diff_options.set_flags(
+        diff::options::flag::include_unmodified,
+        diff::options::flag::include_typechange,
+        diff::options::flag::ignore_filemode,
+        diff::options::flag::ignore_submodules,
+        diff::options::flag::indent_heuristic,
+        diff::options::flag::patience,
+        diff::options::flag::minimal,
+        diff::options::flag::show_binary
+    );
 
     for (unsigned int repo_cycle = 0; repo_cycle < cycles_over_repos; ++ repo_cycle)
     {
@@ -121,16 +133,16 @@ int main(int argc, char **argv)
     
                 switch (commit.parent_count()) {
                 case 0:
-                    diff = repository.create_diff_tree_to_tree(tree(), commit.tree());
+                    diff = repository.create_diff_tree_to_tree(tree(), commit.tree(), diff_options);
                     break;
                 case 1:
-                    diff = repository.create_diff_tree_to_tree(commit.parent(0).tree(), commit.tree());
+                    diff = repository.create_diff_tree_to_tree(commit.parent(0).tree(), commit.tree(), diff_options);
                     break;
                 case 2:
                     possible_conflicts = repository.merge_commits(commit.parent(0), commit.parent(1));
                     merges.clear();
                     merges.read_tree(commit.tree());
-                    diff = repository.create_diff_index_to_index(possible_conflicts, merges);
+                    diff = repository.create_diff_index_to_index(possible_conflicts, merges, diff_options);
                     break;
                 default:
                     throw "multimerge";
@@ -172,6 +184,8 @@ int main(int argc, char **argv)
                         }
                     }
                 });
+
+		cout <<  "input count: " << inputs.size() << endl;
     
                 static thread_local unordered_map<pair<oid,oid>, string, oid_pair_hash> outputs;
                 static thread_local vector<pair<oid,oid>> diff_oids;
@@ -199,6 +213,8 @@ int main(int argc, char **argv)
                     }
                     patch.append(line.content(), line.content_length());
                 });
+
+		cout <<  "output count: " << outputs.size() << endl;
     
                 // we now have output data, indexed by diff_oids
                 size_t total = diff.size() - diff.size(cppgit2::diff::delta::type::unmodified);
@@ -207,6 +223,7 @@ int main(int argc, char **argv)
                 int diffs_output = 0;
                 for(int diff_idx = 0; diffs_output < max_diffs_per_commit && diff_idx < total; ++ diff_idx) {
                     auto ident = diff_oids[diff_idx];
+		    cout <<  "selecting " << ident.first.to_hex_string() << endl;
 
                     size_t output_size = 0, input_size = 0;
                     
@@ -246,8 +263,12 @@ int main(int argc, char **argv)
                     // first output context from other changed files
                     input_index_2 = diff_oids;
                     shuffle(input_index_2.begin(), input_index_2.end(), rng);
+		    cout <<  "input_size=" << input_size << endl;
+		    cout <<  "max_input_length=" << max_input_length << endl;
+		    cout <<  "input_index_2.size()=" << input_index_2.size() << endl;
                     while (input_size < max_input_length && !input_index_2.empty()) {
                         pair<oid,oid> & ident2 = input_index_2.back();
+		        cout <<  "considering " << ident.first.to_hex_string() << endl;
                         if (ident2 != ident) {
                             auto & more = inputs[ident2];
                             size_t more_size;
@@ -266,11 +287,18 @@ int main(int argc, char **argv)
                             }
                         }
                         input_index_2.pop_back();
+		        cout <<  "input_size=" << input_size << endl;
+		        cout <<  "input_index_2.size()=" << input_index_2.size() << endl;
                     }
+		    cout <<  "input_size=" << input_size << endl;
+		    cout <<  "max_input_length=" << max_input_length << endl;
                     if (input_size < max_input_length) {
                         // if room, add context from other files in the tree
                         input_index_2 = input_index;
                         shuffle(input_index_2.begin(), input_index_2.end(), rng);
+		        cout <<  "input_size=" << input_size << endl;
+		        cout <<  "max_input_length=" << max_input_length << endl;
+		        cout <<  "input_index_2.size()=" << input_index_2.size() << endl;
                         while (input_size < max_input_length && !input_index_2.empty()) {
                             pair<oid,oid> & ident2 = input_index_2.back();
                             if (!outputs.count(ident2)) {
