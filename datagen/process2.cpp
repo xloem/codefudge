@@ -14,7 +14,9 @@ using namespace cppgit2;
 #include <rapidjson/writer.h>
 #include <rapidjson/stringbuffer.h>
 
+#ifdef TOKENIZE
 #include "tinytokenizers.rs.h"
+#endif
 
 struct oid_hash
 {
@@ -72,7 +74,9 @@ int main(int argc, char **argv)
     unsigned int max_input_length = ~0;
     unsigned int max_output_length = ~0; //1024;
     unsigned int cycles_over_repos = ~0;
+    #ifdef TOKENIZE
     bool lengths_are_tokenized = false;
+    #endif
     bool cut_input = false;
     bool cut_output = false;
     string tokenizer_path = "tokenizer.json";
@@ -140,8 +144,10 @@ int main(int argc, char **argv)
                 // OPTIMIZE: this selection of inputs can be done by randomizing a range of integers and picking by integers
                 // no need to enumerate them all in the next block
     
+		#ifdef TOKENIZE
                 static thread_local rust::Box<Tokenizer> tokenizer = from_file(tokenizer_path);
                 static thread_local rust::Box<Encoding> tokenization = rust::Box<Encoding>::from_raw(nullptr);
+		#endif
     
                     // use of pointer here will be referencing temporaries.
                     // can likely use an oid pair ... or something
@@ -205,6 +211,7 @@ int main(int argc, char **argv)
                     size_t output_size = 0, input_size = 0;
                     
                     string output = outputs[ident];
+		    #ifdef TOKENIZE
                     if (lengths_are_tokenized) {
                         tokenization = tokenizer->encode(output, true);
                         output_size = tokenization->get_ids().size();
@@ -215,7 +222,9 @@ int main(int argc, char **argv)
                                 // BUG: not cutting output due to tokenization funcs haven't implemented yet
                             }
                         }
-                    } else {
+                    } else
+		    #endif
+                    {
                         output_size = output.size();
                     }
     
@@ -223,10 +232,13 @@ int main(int argc, char **argv)
                         input_start + message_start + commit.message() + message_end;
                     input += inputs[ident];
                     
+		    #ifdef TOKENIZE
                     if (lengths_are_tokenized) {
                         tokenization = tokenizer->encode(input, true);
                         input_size = tokenization->get_ids().size();
-                    } else {
+                    } else
+		    #endif
+                    {
                         input_size = input.size();
                     }
 
@@ -239,10 +251,13 @@ int main(int argc, char **argv)
                         if (ident2 != ident) {
                             auto & more = inputs[ident2];
                             size_t more_size;
+		            #ifdef TOKENIZE
                             if (lengths_are_tokenized) {
                                 tokenization = tokenizer->encode(more, false);
                                 more_size = tokenization->get_ids().size();
-                            } else {
+                            } else
+                            #endif
+                            {
                                 more_size = more.size();
                             }
                             if (cut_input || input_size + more_size <= max_input_length) {
@@ -261,10 +276,13 @@ int main(int argc, char **argv)
                             if (!outputs.count(ident2)) {
                                 auto & more = inputs[ident2];
                                 size_t more_size;
+		                #ifdef TOKENIZE
                                 if (lengths_are_tokenized) {
                                     tokenization = tokenizer->encode(more, false);
                                     more_size = tokenization->get_ids().size();
-                                } else {
+                                } else
+		                #endif
+                                {
                                     more_size = more.size();
                                 }
                                 if (cut_input || input_size + more_size <= max_input_length) {
