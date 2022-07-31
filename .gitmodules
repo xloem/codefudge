@@ -1,3 +1,6 @@
 [submodule "datagen/bold84-cppgit2"]
 	path = datagen/bold84-cppgit2
-	url = https://github.com/bold84/cppgit2
+	url = https://github.com/xloem/cppgit2
+[submodule "datagen/rapidjson"]
+	path = datagen/rapidjson
+	url = https://github.com/Tencent/rapidjson/

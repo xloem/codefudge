@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cstdio>
+#include <random>
 #include <unordered_map>
 #include <vector>
 
@@ -49,11 +50,25 @@ struct oid_pair_hash
     }
 };
 
+struct repo_commits
+{
+    cppgit2::repository repository;
+    std::vector<cppgit2::oid> commits;
+    repo_commits(char const * path)
+    : repository(cppgit2::repository::open(path))
+    {
+        repository.for_each_commit([&](const cppgit2::commit & c)
+        {
+            commits.push_back(c.id());
+        });
+    }
+};
+
 int main(int argc, char **argv)
 {
-    int max_diffs_per_commit = 1;
-    int max_commits_per_repo = 1;
-    int seed = 0;
+    unsigned int max_diffs_per_commit = 1;
+    unsigned int max_commits_per_repo = 1;
+    unsigned int seed = 0;
     unsigned int max_input_length = ~0;
     unsigned int max_output_length = ~0; //1024;
     unsigned int cycles_over_repos = ~0;
@@ -70,19 +85,22 @@ int main(int argc, char **argv)
     string file_content_end = "";
     string input_end = "</s>";
 
-    srand(seed);
+    default_random_engine rng{seed};
+
+    static thread_local unordered_map<string, repo_commits> repos;
 
     for (unsigned int repo_cycle = 0; repo_cycle < cycles_over_repos; ++ repo_cycle)
     {
         for (char **pathptr = &argv[1]; pathptr != &argv[argc]; ++ pathptr)
         {
-            auto repository = repository::open(*pathptr);
-            static thread_local vector<oid> commit_oids;
-            repository.for_each_commit([](const commit & c)
-            {
-                commit_oids.push_back(c.id());
-            });
-            random_shuffle(commit_oids.begin(), commit_oids.end());
+            if (!repos.count(*pathptr)) {
+                repos.emplace(*pathptr, *pathptr);
+            }
+            repo_commits & repo_entry = repos.at(*pathptr);
+            auto & repository = repo_entry.repository;
+            auto & commit_oids = repo_entry.commits;
+
+            shuffle(commit_oids.begin(), commit_oids.end(), rng);
     
             int commits_output = 0;
             for (int commit_idx = 0; commits_output < max_commits_per_repo && commit_idx < commit_oids.size(); ++ commit_idx) {
@@ -178,7 +196,7 @@ int main(int argc, char **argv)
     
                 // we now have output data, indexed by diff_oids
                 size_t total = diff.size() - diff.size(cppgit2::diff::delta::type::unmodified);
-                random_shuffle(diff_oids.begin(), diff_oids.end());
+                shuffle(diff_oids.begin(), diff_oids.end(), rng);
     
                 int diffs_output = 0;
                 for(int diff_idx = 0; diffs_output < max_diffs_per_commit && diff_idx < total; ++ diff_idx) {
@@ -215,7 +233,7 @@ int main(int argc, char **argv)
                     static thread_local vector<pair<oid,oid>> input_index_2;
                     // first output context from other changed files
                     input_index_2 = diff_oids;
-                    random_shuffle(input_index_2.begin(), input_index_2.end());
+                    shuffle(input_index_2.begin(), input_index_2.end(), rng);
                     while (input_size < max_input_length && !input_index_2.empty()) {
                         pair<oid,oid> & ident2 = input_index_2.back();
                         if (ident2 != ident) {
@@ -237,7 +255,7 @@ int main(int argc, char **argv)
                     if (input_size < max_input_length) {
                         // if room, add context from other files in the tree
                         input_index_2 = input_index;
-                        random_shuffle(input_index_2.begin(), input_index_2.end());
+                        shuffle(input_index_2.begin(), input_index_2.end(), rng);
                         while (input_size < max_input_length && !input_index_2.empty()) {
                             pair<oid,oid> & ident2 = input_index_2.back();
                             if (!outputs.count(ident2)) {

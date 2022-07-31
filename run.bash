@@ -8,8 +8,8 @@ apt install gh
 npm install --global @web3-storage/w3
 
 # authenticate with user
-gh auth login
-w3 token
+#gh auth login
+#w3 token
 
 # install python dependencies
 python3 -m pip install -U pip pynacl datasets sacremoses rouge-score git+https://github.com/xloem/adapter-transformers.git@longt5 torch
