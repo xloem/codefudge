@@ -59,10 +59,14 @@ struct repo_commits
     repo_commits(char const * path)
     : repository(cppgit2::repository::open(path))
     {
-        repository.for_each_commit([&](const cppgit2::commit & c)
-        {
-            commits.push_back(c.id());
-        });
+        std::cerr << "Loading commits for " << path << std::endl;
+        //static cppgit2::revwalk revwalk;
+	//revwalk.reset();
+        auto revwalk = repository.create_revwalk();
+        revwalk.push_glob("*");
+        while (!revwalk.done()) {
+            commits.push_back(revwalk.next());
+        }
     }
 };
 
