@@ -75,7 +75,7 @@ int main(int argc, char **argv)
     unsigned int max_diffs_per_commit = 1;
     unsigned int max_commits_per_repo = 1;
     unsigned int seed = 0;
-    unsigned int max_input_length = ~0;
+    unsigned int max_input_length = 1024; //~0;
     unsigned int max_output_length = ~0; //1024;
     unsigned int cycles_over_repos = 2;//~0;
     #ifdef TOKENIZE
@@ -172,11 +172,21 @@ int main(int argc, char **argv)
                 static thread_local vector<pair<oid,oid>> input_index;
                 input_index.clear();
                 inputs.clear();
+
                 cerr << "looping over diff: " << commit.id().to_hex_string() << endl;
                 // fetch missing objects?
                 while ("checking all objects are present") {
                     try {
-                        diff.for_each([](const cppgit2::diff::delta & need_eeg_and_blockchain, float progress) {});
+                        diff.for_each([&](const cppgit2::diff::delta & need_eeg_and_blockchain, float progress) {
+                            cppgit2::oid id = need_eeg_and_blockchain.old_file().id();
+                            if (!id.is_zero()) {
+                                repository.lookup_blob(id);
+                            }
+                            id = need_eeg_and_blockchain.new_file().id();
+                            if (!id.is_zero()) {
+                                repository.lookup_blob(id);
+                            }
+                        });
                         break;
                     } catch (cppgit2::git_exception &exc) {
                         string msg = exc.what();
@@ -187,7 +197,9 @@ int main(int argc, char **argv)
                         // each remote branch for the commit using remote.for_each_branch, then fetching from the remote
                         string cmd = "cd '" + repository.path() + "';git cat-file blob " + oid + ">/dev/null";
                         cerr << cmd << endl;
-                        system(cmd.c_str());
+                        if (system(cmd.c_str())) {
+                            throw;
+                        }
                     }
                 }
                 diff.for_each([&](const cppgit2::diff::delta & need_eeg_and_blockchain, float progress) // pain shown
@@ -248,11 +260,19 @@ int main(int argc, char **argv)
                 // we now have output data, indexed by diff_oids
                 size_t total = diff.size() - diff.size(cppgit2::diff::delta::type::unmodified);
                 shuffle(diff_oids.begin(), diff_oids.end(), rng);
-    
                 int diffs_output = 0;
+
+                //static thread_local vector<size_t> diff_idcs;
+                //diff_idcs.resize(diff.size());
+                //for (size_t i = 0; i < diff.size; ++i ) {
+                //	diff_idcs[i] = i;
+                //}
+                //shuffle(diff_idcs.begin(), diff_idcs.end(), rng);
+                //for (int diff_idx
+    
                 for(int diff_idx = 0; diffs_output < max_diffs_per_commit && diff_idx < total; ++ diff_idx) {
                     auto ident = diff_oids[diff_idx];
-		    //cout <<  "selecting " << ident.first.to_hex_string() << endl;
+                    //cout <<  "selecting " << ident.first.to_hex_string() << endl;
 
                     size_t output_size = 0, input_size = 0;
                     
