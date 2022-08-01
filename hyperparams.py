@@ -23,7 +23,7 @@ def commit_lookup_path(commit, name):
 unvisited_commits = set([repo.head.commit])
 #visited_commits = {}
 visited_commits = set()
-blobs = set()
+blobs = {}
 
 # due to doing this while engaging an inhibition, it does not associate blobs with the commits the introduced them
 
@@ -37,16 +37,16 @@ while len(unvisited_commits):
     #    continue
     if commit in visited_commits:
         continue
+    time = commit.authored_date
     blob = commit_lookup_path(commit,PATH)
     unvisited_commits.update(commit.parents)
     visited_commits.add(commit)
     if blob is not None:
-        blobs.add(blob)
-    #visited_commits[commit.hexsha] = {
-    #    'commit': commit,
-    #    'blob': blob,
-    #    'time': time,
-    #}
+        if blob in blobs:
+            if commit.authored_date < blobs[blob].authored_date:
+                blobs[blob] = commit    
+        else:
+            blobs[blob] = commit    
     
 print(f'found {len(visited_commits)} commits, {len(blobs)} blobs')
 
@@ -77,3 +77,9 @@ if updated_cache:
     os.rename('hyperparm_cache.json.new', 'hyperparm_cache.json')
 
 print(f'cache has {len(cache)} entries')
+
+for url, commit in zip(urls, blobs.values()):
+    try:
+        state = cache[url]
+    except:
+        continue
