@@ -1,4 +1,4 @@
-import git, json, logging, requests
+import git, json, logging, os, requests
 logging.basicConfig(level=logging.DEBUG)
 repo = git.Repo('.')
 
