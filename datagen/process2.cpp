@@ -75,9 +75,9 @@ int main(int argc, char **argv)
     unsigned int max_diffs_per_commit = 1;
     unsigned int max_commits_per_repo = 1;
     unsigned int seed = 0;
-    unsigned int max_input_length = 1024; //~0;
-    unsigned int max_output_length = ~0; //1024;
-    unsigned int cycles_over_repos = 2;//~0;
+    unsigned int max_input_length = 256; //~0;
+    unsigned int max_output_length = 256; //~0; //1024;
+    unsigned int cycles_over_repos = 16; //2;//~0;
     #ifdef TOKENIZE
     bool lengths_are_tokenized = false;
     #endif
@@ -178,13 +178,25 @@ int main(int argc, char **argv)
                 while ("checking all objects are present") {
                     try {
                         diff.for_each([&](const cppgit2::diff::delta & need_eeg_and_blockchain, float progress) {
-                            cppgit2::oid id = need_eeg_and_blockchain.old_file().id();
-                            if (!id.is_zero()) {
-                                repository.lookup_blob(id);
-                            }
-                            id = need_eeg_and_blockchain.new_file().id();
-                            if (!id.is_zero()) {
-                                repository.lookup_blob(id);
+                            cppgit2::diff::delta::file files[2] = {need_eeg_and_blockchain.old_file(), need_eeg_and_blockchain.new_file()};
+                            for (auto & file : files) {
+                                cppgit2::oid id = file.id();
+                                if (!id.is_zero()) {
+                                    try{
+                                        repository.lookup_object(id, object::object_type::any);
+                                    } catch (cppgit2::git_exception &exc) {
+                                        static string msg;
+                                        msg = exc.what();
+                                        try {
+                                            // submodule ids are the submodule head commit and are never present
+                                            repository.lookup_submodule(need_eeg_and_blockchain.old_file().path());
+                                            continue;
+                                        } catch (cppgit2::git_exception &exc2) {
+                                            cerr << exc2.what() << endl;
+                                            throw cppgit2::git_exception(msg); // the original exception had its message overwritten by the following exception
+                                        }
+                                    }
+                                }
                             }
                         });
                         break;
@@ -193,27 +205,36 @@ int main(int argc, char **argv)
                         size_t end = msg.rfind(')');
                         size_t start = msg.rfind('(', end) + 1;
                         string oid = msg.substr(start, end - start);
+                        cppgit2::oid oidoid(oid);
 
-                        repository.for_each_branch([&](const cppgit2::reference & branch)
+                        cerr << "Downloading " << oid << " ..." << endl;
+
+                        repository.for_each_branch([&](cppgit2::reference branch)
                         {
-                            if (repository.is_descendant_of(branch.resolve().target(), commit.id()) {
+                            if (repository.is_descendant_of(branch.resolve().target(), commit.id())) {
                                     // the remote containing branch should have oid
-                                    std::string remote_name = repository.branch_remote_name(branch.name()));
+                                    std::string remote_name = repository.branch_remote_name(branch.name());
                                     cppgit2::remote remote = repository.lookup_remote(remote_name);
-                                    if (!remote.is_connected()) {
-                                        remote.connect();
-                                    }
-                                    remote.download({commit.id().to_hex_string()});
+                                    //if (!remote.is_connected()) {
+                                    //    remote.connect(cppgit2::connection_direction::fetch);
+                                    //}
+                                    std::vector<std::string> refspecs;
+                                    std::string missing_commit = commit.id().to_hex_string();
+                                    refspecs.push_back(missing_commit + ":" + remote_name + "/single_commit");
+                                    //refspecs.push_back(branch.name() + ":" + remote_name + "/" + branch.name());
+                                    cppgit2::strarray refspecs_array(refspecs);
+                                    remote.download(refspecs_array);
+                                    //string cmd = "cd '" + repository.path() + "'; git fetch " + 
                             }
                         }, cppgit2::branch::branch_type::remote);
 
                         // this can be done directly by using something like repository.mergebase to check
                         // each remote branch for the commit using remote.for_each_branch, then fetching from the remote
-                        string cmd = "cd '" + repository.path() + "';git cat-file blob " + oid + ">/dev/null";
-                        cerr << cmd << endl;
-                        if (system(cmd.c_str())) {
-                            throw;
-                        }
+                        //string cmd = "cd '" + repository.path() + "';git cat-file blob " + oid + ">/dev/null";
+                        //cerr << cmd << endl;
+                        //if (system(cmd.c_str())) {
+                        //    throw;
+                       // }
                     }
                 }
                 diff.for_each([&](const cppgit2::diff::delta & need_eeg_and_blockchain, float progress) // pain shown
@@ -429,7 +450,7 @@ int main(int argc, char **argv)
                     lineout.String("input", 5); lineout.String(input.data(), input.size());
                     lineout.String("label", 5); lineout.String(output.data(), output.size());
                     lineout.EndObject();
-                    puts(linebuf.GetString());
+                    //puts(linebuf.GetString());
                     ++ diffs_output;
                 }
                 if (diffs_output > 0) {
