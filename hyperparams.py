@@ -66,8 +66,11 @@ except:
 updated_cache = False
 for idx, url in enumerate(urls):
     if url not in cache and '://' in url:
-        updated_cache = True
-        cache[url] = requests.get(url + '/' + SUBURL).json()
+        try:
+            updated_cache = True
+            cache[url] = requests.get(url + '/' + SUBURL).json()
+        except:
+            print(f'failed: {url}/{SUBURL}')
 if updated_cache:
     with open('hyperparm_cache.json.new', 'wt') as file:
         json.dump(cache, file)
