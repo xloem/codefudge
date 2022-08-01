@@ -61,7 +61,7 @@ struct repo_commits
     {
         std::cerr << "Loading commits for " << path << std::endl;
         //static cppgit2::revwalk revwalk;
-	//revwalk.reset();
+        //revwalk.reset();
         auto revwalk = repository.create_revwalk();
         revwalk.push_glob("*");
         while (!revwalk.done()) {
@@ -160,10 +160,10 @@ int main(int argc, char **argv)
                 // OPTIMIZE: this selection of inputs can be done by randomizing a range of integers and picking by integers
                 // no need to enumerate them all in the next block
     
-		#ifdef TOKENIZE
+                #ifdef TOKENIZE
                 static thread_local rust::Box<Tokenizer> tokenizer = from_file(tokenizer_path);
                 static thread_local rust::Box<Encoding> tokenization = rust::Box<Encoding>::from_raw(nullptr);
-		#endif
+                #endif
     
                     // use of pointer here will be referencing temporaries.
                     // can likely use an oid pair ... or something
@@ -181,21 +181,9 @@ int main(int argc, char **argv)
                             cppgit2::diff::delta::file files[2] = {need_eeg_and_blockchain.old_file(), need_eeg_and_blockchain.new_file()};
                             for (auto & file : files) {
                                 cppgit2::oid id = file.id();
-                                if (!id.is_zero()) {
-                                    try{
-                                        repository.lookup_object(id, object::object_type::any);
-                                    } catch (cppgit2::git_exception &exc) {
-                                        static string msg;
-                                        msg = exc.what();
-                                        try {
-                                            // submodule ids are the submodule head commit and are never present
-                                            repository.lookup_submodule(need_eeg_and_blockchain.old_file().path());
-                                            continue;
-                                        } catch (cppgit2::git_exception &exc2) {
-                                            cerr << exc2.what() << endl;
-                                            throw cppgit2::git_exception(msg); // the original exception had its message overwritten by the following exception
-                                        }
-                                    }
+                                // process objects that are blobs with nonzero ids. object type is stored in file mode.
+                                if ((file.mode() & 0777000) == (GIT_FILEMODE_BLOB & 0777000) && !id.is_zero()) {
+                                    repository.lookup_blob(id);
                                 }
                             }
                         });
@@ -239,10 +227,11 @@ int main(int argc, char **argv)
                 }
                 diff.for_each([&](const cppgit2::diff::delta & need_eeg_and_blockchain, float progress) // pain shown
                 { // input files
-                    auto old_id = need_eeg_and_blockchain.old_file().id();
-                    if (!old_id.is_zero()) {
-		    	        //cerr << "looking up content: " << need_eeg_and_blockchain.old_file().id().to_hex_string() << endl;
-                        blob content = repository.lookup_blob(need_eeg_and_blockchain.old_file().id());
+                    auto old_file = need_eeg_and_blockchain.old_file();
+                    auto old_id = old_file.id();
+                    if ((old_file.mode() & 0777000) == (GIT_FILEMODE_BLOB & 0777000) && !old_id.is_zero()) {
+                                    //cerr << "looking up content: " << need_eeg_and_blockchain.old_file().id().to_hex_string() << endl;
+                        blob content = repository.lookup_blob(old_id);
                         if (!content.is_binary()) {
                             auto ident = make_pair<oid,oid>(
                                 need_eeg_and_blockchain.old_file().id(),
@@ -259,7 +248,7 @@ int main(int argc, char **argv)
                     }
                 });
 
-		//cout <<  "input count: " << inputs.size() << endl;
+                //cout <<  "input count: " << inputs.size() << endl;
     
                 static thread_local unordered_map<pair<oid,oid>, string, oid_pair_hash> outputs;
                 static thread_local vector<pair<oid,oid>> diff_oids;
@@ -290,7 +279,7 @@ int main(int argc, char **argv)
                     patch.append(line.content(), line.content_length());
                 });
 
-		//cout <<  "output count: " << outputs.size() << endl;
+                //cout <<  "output count: " << outputs.size() << endl;
     
                 // we now have output data, indexed by diff_oids
                 size_t total = diff.size() - diff.size(cppgit2::diff::delta::type::unmodified);
@@ -300,7 +289,7 @@ int main(int argc, char **argv)
                 //static thread_local vector<size_t> diff_idcs;
                 //diff_idcs.resize(diff.size());
                 //for (size_t i = 0; i < diff.size; ++i ) {
-                //	diff_idcs[i] = i;
+                //        diff_idcs[i] = i;
                 //}
                 //shuffle(diff_idcs.begin(), diff_idcs.end(), rng);
                 //for (int diff_idx = 0; diffs_output < max_diffs_per_commit && diff_idx < diff_idcs.size(); ++ diff_idx) {
@@ -352,7 +341,7 @@ int main(int argc, char **argv)
                             }
                         }
                     } else
-		    #endif
+                    #endif
                     {
                         output_size = output.size();
                     }
@@ -361,12 +350,12 @@ int main(int argc, char **argv)
                         input_start + message_start + commit.message() + message_end;
                     input += inputs[ident];
                     
-		    #ifdef TOKENIZE
+                    #ifdef TOKENIZE
                     if (lengths_are_tokenized) {
                         tokenization = tokenizer->encode(input, true);
                         input_size = tokenization->get_ids().size();
                     } else
-		    #endif
+                    #endif
                     {
                         input_size = input.size();
                     }
@@ -375,16 +364,16 @@ int main(int argc, char **argv)
                     // first output context from other changed files
                     input_index_2 = diff_oids;
                     shuffle(input_index_2.begin(), input_index_2.end(), rng);
-		    //cout <<  "input_size=" << input_size << endl;
-		    //cout <<  "max_input_length=" << max_input_length << endl;
-		    //cout <<  "input_index_2.size()=" << input_index_2.size() << endl;
+                    //cout <<  "input_size=" << input_size << endl;
+                    //cout <<  "max_input_length=" << max_input_length << endl;
+                    //cout <<  "input_index_2.size()=" << input_index_2.size() << endl;
                     while (input_size < max_input_length && !input_index_2.empty()) {
                         pair<oid,oid> & ident2 = input_index_2.back();
-		        //cout <<  "considering " << ident.first.to_hex_string() << endl;
+                        //cout <<  "considering " << ident.first.to_hex_string() << endl;
                         if (ident2 != ident) {
                             auto & more = inputs[ident2];
                             size_t more_size;
-		            #ifdef TOKENIZE
+                            #ifdef TOKENIZE
                             if (lengths_are_tokenized) {
                                 tokenization = tokenizer->encode(more, false);
                                 more_size = tokenization->get_ids().size();
@@ -399,29 +388,29 @@ int main(int argc, char **argv)
                             }
                         }
                         input_index_2.pop_back();
-		        //cout <<  "input_size=" << input_size << endl;
-		        //cout <<  "input_index_2.size()=" << input_index_2.size() << endl;
+                        //cout <<  "input_size=" << input_size << endl;
+                        //cout <<  "input_index_2.size()=" << input_index_2.size() << endl;
                     }
-		    //cout <<  "input_size=" << input_size << endl;
-		    //cout <<  "max_input_length=" << max_input_length << endl;
+                    //cout <<  "input_size=" << input_size << endl;
+                    //cout <<  "max_input_length=" << max_input_length << endl;
                     if (input_size < max_input_length) {
                         // if room, add context from other files in the tree
                         input_index_2 = input_index;
                         shuffle(input_index_2.begin(), input_index_2.end(), rng);
-		        //cout <<  "input_size=" << input_size << endl;
-		        //cout <<  "max_input_length=" << max_input_length << endl;
-		        //cout <<  "input_index_2.size()=" << input_index_2.size() << endl;
+                        //cout <<  "input_size=" << input_size << endl;
+                        //cout <<  "max_input_length=" << max_input_length << endl;
+                        //cout <<  "input_index_2.size()=" << input_index_2.size() << endl;
                         while (input_size < max_input_length && !input_index_2.empty()) {
                             pair<oid,oid> & ident2 = input_index_2.back();
                             if (!outputs.count(ident2)) {
                                 auto & more = inputs[ident2];
                                 size_t more_size;
-		                #ifdef TOKENIZE
+                                #ifdef TOKENIZE
                                 if (lengths_are_tokenized) {
                                     tokenization = tokenizer->encode(more, false);
                                     more_size = tokenization->get_ids().size();
                                 } else
-		                #endif
+                                #endif
                                 {
                                     more_size = more.size();
                                 }
@@ -450,7 +439,7 @@ int main(int argc, char **argv)
                     lineout.String("input", 5); lineout.String(input.data(), input.size());
                     lineout.String("label", 5); lineout.String(output.data(), output.size());
                     lineout.EndObject();
-                    //puts(linebuf.GetString());
+                    puts(linebuf.GetString());
                     ++ diffs_output;
                 }
                 if (diffs_output > 0) {
