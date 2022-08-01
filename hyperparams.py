@@ -1,6 +1,8 @@
-import git, json, requests
+import git, json, logging, requests
+logging.basicConfig(level=logging.DEBUG)
 repo = git.Repo('.')
 
+GATEWAY='gateway.pinata.cloud'
 PATH='w3put.log'
 SUBURL='fudge-long-t5-tglobal-base/trainer_state.json'
 
@@ -51,7 +53,8 @@ print(f'found {len(visited_commits)} commits, {len(blobs)} blobs')
 def blob2url(blob):
     content = blob.data_stream[-1].read()
     content = content.decode().strip()
-    return content.split(' ')[-1]
+    url = content.split(' ')[-1].replace('dweb.link', GATEWAY)
+    return url
 
 urls = [blob2url(blob) for blob in blobs]
 
@@ -61,10 +64,10 @@ try:
 except:
     cache = {}
 updated_cache = False
-#for url in urls:
-#    if url not in cache:
-#        updated_cache = True
-#        cache[url] = requests.get(url + '/' + SUBURL).json()
+for idx, url in enumerate(urls):
+    if url not in cache and '://' in url:
+        updated_cache = True
+        cache[url] = requests.get(url + '/' + SUBURL).json()
 if updated_cache:
     with open('hyperparm_cache.json.new', 'wt') as file:
         json.dump(cache, file)
