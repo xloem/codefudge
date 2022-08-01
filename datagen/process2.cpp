@@ -193,6 +193,20 @@ int main(int argc, char **argv)
                         size_t end = msg.rfind(')');
                         size_t start = msg.rfind('(', end) + 1;
                         string oid = msg.substr(start, end - start);
+
+                        repository.for_each_branch([&](const cppgit2::reference & branch)
+                        {
+                            if (repository.is_descendant_of(branch.resolve().target(), commit.id()) {
+                                    // the remote containing branch should have oid
+                                    std::string remote_name = repository.branch_remote_name(branch.name()));
+                                    cppgit2::remote remote = repository.lookup_remote(remote_name);
+                                    if (!remote.is_connected()) {
+                                        remote.connect();
+                                    }
+                                    remote.download({commit.id().to_hex_string()});
+                            }
+                        }, cppgit2::branch::branch_type::remote);
+
                         // this can be done directly by using something like repository.mergebase to check
                         // each remote branch for the commit using remote.for_each_branch, then fetching from the remote
                         string cmd = "cd '" + repository.path() + "';git cat-file blob " + oid + ">/dev/null";
@@ -268,7 +282,35 @@ int main(int argc, char **argv)
                 //	diff_idcs[i] = i;
                 //}
                 //shuffle(diff_idcs.begin(), diff_idcs.end(), rng);
-                //for (int diff_idx
+                //for (int diff_idx = 0; diffs_output < max_diffs_per_commit && diff_idx < diff_idcs.size(); ++ diff_idx) {
+                //    const cppgit2::diff::delta & need_eeg_and_blockchain = diff[diff_idcs[diff_idx]];
+                //    auto ident = make_pair<oid,oid>(
+                //        need_eeg_and_blockchain.old_file().id(),
+                //        need_eeg_and_blockchain.new_file().id()
+                //    ); // .path()
+                //    
+                //    // INPUT left off here
+                //
+                //    // OUTPUT
+                //    string output = outputs[ident];
+
+                //    #ifdef TOKENIZE
+                //    if (lengths_are_tokenized) {
+                //        tokenization = tokenizer->encode(output, true);
+                //        output_size = tokenization->get_ids().size();
+                //        if (output_size > max_output_length) {
+                //            if (!cut_output) {
+                //                continue;
+                //            } else {
+                //                // BUG: not cutting output due to tokenization funcs haven't implemented yet
+                //            }
+                //        }
+                //    } else
+                //    #endif
+                //    {
+                //        output_size = output.size();
+                //    }
+                //}
     
                 for(int diff_idx = 0; diffs_output < max_diffs_per_commit && diff_idx < total; ++ diff_idx) {
                     auto ident = diff_oids[diff_idx];
@@ -277,7 +319,7 @@ int main(int argc, char **argv)
                     size_t output_size = 0, input_size = 0;
                     
                     string output = outputs[ident];
-		    #ifdef TOKENIZE
+                    #ifdef TOKENIZE
                     if (lengths_are_tokenized) {
                         tokenization = tokenizer->encode(output, true);
                         output_size = tokenization->get_ids().size();
