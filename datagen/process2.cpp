@@ -48,7 +48,7 @@ struct oid_pair_hash
 {
     template <class T1, class T2>
     std::size_t operator() (const std::pair<T1, T2> & pair) const {
-        return oid_hash()(pair.first) ^ oid_hash()(pair.second);
+        return oid_hash()(pair.first) ^ (oid_hash()(pair.second) << 1);
     }
 };
 
@@ -170,12 +170,31 @@ int main(int argc, char **argv)
                 static thread_local unordered_map<pair<oid,oid>, string, oid_pair_hash> inputs;
                 //static thread_local unordered_map<pair<oid,oid>, vector<uint32_t>, oid_pair_hash> input_ids;
                 static thread_local vector<pair<oid,oid>> input_index;
-		input_index.clear();
-		inputs.clear();
+                input_index.clear();
+                inputs.clear();
+                cerr << "looping over diff: " << commit.id().to_hex_string() << endl;
+                // fetch missing objects?
+                while ("checking all objects are present") {
+                    try {
+                        diff.for_each([](const cppgit2::diff::delta & need_eeg_and_blockchain, float progress) {});
+                        break;
+                    } catch (cppgit2::git_exception &exc) {
+                        string msg = exc.what();
+                        size_t end = msg.rfind(')');
+                        size_t start = msg.rfind('(', end) + 1;
+                        string oid = msg.substr(start, end - start);
+                        // this can be done directly by using something like repository.mergebase to check
+                        // each remote branch for the commit using remote.for_each_branch, then fetching from the remote
+                        string cmd = "cd '" + repository.path() + "';git cat-file blob " + oid + ">/dev/null";
+                        cerr << cmd << endl;
+                        system(cmd.c_str());
+                    }
+                }
                 diff.for_each([&](const cppgit2::diff::delta & need_eeg_and_blockchain, float progress) // pain shown
                 { // input files
                     auto old_id = need_eeg_and_blockchain.old_file().id();
                     if (!old_id.is_zero()) {
+		    	        //cerr << "looking up content: " << need_eeg_and_blockchain.old_file().id().to_hex_string() << endl;
                         blob content = repository.lookup_blob(need_eeg_and_blockchain.old_file().id());
                         if (!content.is_binary()) {
                             auto ident = make_pair<oid,oid>(
