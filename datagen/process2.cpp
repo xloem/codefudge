@@ -2,6 +2,7 @@
 #include <cstdio>
 #include <random>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 using namespace std;
@@ -56,6 +57,8 @@ struct repo_commits
 {
     cppgit2::repository repository;
     std::vector<cppgit2::oid> commits;
+    std::unordered_set<std::string> missing_objects;
+
     repo_commits(char const * path)
     : repository(cppgit2::repository::open(path))
     {
@@ -67,6 +70,71 @@ struct repo_commits
         while (!revwalk.done()) {
             commits.push_back(revwalk.next());
         }
+    }
+
+    void missing(cppgit2::oid const & oid)
+    {
+        missing_objects.insert(oid.to_hex_string());
+    }
+
+    void missing(std::string const & oid)
+    {
+        missing_objects.insert(oid);
+    }
+
+    void missing(cppgit2::git_exception const  &exc)
+    {
+        string msg = exc.what();
+        size_t end = msg.rfind(')');
+        size_t start = msg.rfind('(', end);
+        if (end == std::string::npos || start == std::string::npos) {
+            throw exc;
+        }
+        start += 1;
+        missing(msg.substr(start, end - start));
+    }
+
+    bool fetch_missing()
+    {
+        if (missing_objects.empty()) {
+            return false;
+        } else{
+            cerr << "Downloading";
+            string cmd = "cd '" + repository.path() + "';{ ";
+            for (auto & missing_object : missing_objects) {
+                string id = missing_object;//.to_hex_string();
+                cerr << " " << id;
+                cmd += "echo " + id + "; ";
+            }
+            cerr << " ..." << endl;
+            cmd += "} | git cat-file --batch-check >/dev/null";
+            cerr << cmd << endl;
+            //string cmd = "cd '" + repository.path() + "';git cat-file blob " + oid + ">/dev/null";
+            //cerr << cmd << endl;
+            if (system(cmd.c_str())) {
+                throw "batch git cat-file subprocess failed";
+            }
+            return true;
+        }
+                        /*repository.for_each_branch([&](cppgit2::reference branch)
+                        {
+                            if (repository.is_descendant_of(branch.resolve().target(), commit.id())) {
+                                    // the remote containing branch should have oid
+                                    std::string remote_name = repository.branch_remote_name(branch.name());
+                                    cppgit2::remote remote = repository.lookup_remote(remote_name);
+                                    //if (!remote.is_connected()) {
+                                    //    remote.connect(cppgit2::connection_direction::fetch);
+                                    //}
+                                    std::vector<std::string> refspecs;
+                                    std::string missing_commit = commit.id().to_hex_string();
+                                    refspecs.push_back(missing_commit + ":" + remote_name + "/single_commit");
+                                    //refspecs.push_back(branch.name() + ":" + remote_name + "/" + branch.name());
+                                    cppgit2::strarray refspecs_array(refspecs);
+                                    remote.download(refspecs_array);
+                                    //string cmd = "cd '" + repository.path() + "'; git fetch " + 
+                            }
+                        }, cppgit2::branch::branch_type::remote);
+                        */
     }
 };
 
@@ -124,7 +192,14 @@ int main(int argc, char **argv)
     
             int commits_output = 0;
             for (int commit_idx = 0; commits_output < max_commits_per_repo && commit_idx < commit_oids.size(); ++ commit_idx) {
-                auto commit = repository.lookup_commit(commit_oids[commit_idx]);
+                cppgit2::commit commit;
+                try {
+                    commit = repository.lookup_commit(commit_oids[commit_idx]);
+                } catch (cppgit2::git_exception &exc) {
+                    repo_entry.missing(exc);
+                    repo_entry.fetch_missing();
+                    commit = repository.lookup_commit(commit_oids[commit_idx]);
+                }
     
                 static thread_local cppgit2::index possible_conflicts, merges;
                 cppgit2::diff diff;
@@ -177,7 +252,6 @@ int main(int argc, char **argv)
                 // fetch missing objects?
                 static thread_local vector<cppgit2::oid> missing_objects;
                 while ("checking all objects are present") {
-                    missing_objects.clear();
                     try {
                         diff.for_each([&](const cppgit2::diff::delta & need_eeg_and_blockchain, float progress) {
                             cppgit2::diff::delta::file files[2] = {need_eeg_and_blockchain.old_file(), need_eeg_and_blockchain.new_file()};
@@ -188,57 +262,19 @@ int main(int argc, char **argv)
                                     try {
                                         repository.lookup_blob(id);
                                     } catch (cppgit2::git_exception &exc) {
-                                        missing_objects.push_back(id);
+                                        repo_entry.missing(id);
                                     }
                                 }
                             }
                         });
                     } catch (cppgit2::git_exception &exc) {
-                        string msg = exc.what();
-                        size_t end = msg.rfind(')');
-                        size_t start = msg.rfind('(', end) + 1;
-                        cppgit2::oid id(msg.substr(start, end - start));
-                        missing_objects.push_back(id);
+                        repo_entry.missing(exc);
                     }
-                    if (!missing_objects.empty()) {
-                        cerr << "Downloading";
-                        string cmd = "cd '" + repository.path() + "';{ ";
-                        for (auto & missing_object : missing_objects) {
-                            string id = missing_object.to_hex_string();
-                            cerr << " " << id;
-                            cmd += "echo " + id + "; ";
-                        }
-                        cerr << " ..." << endl;
-                        cmd += "} | git cat-file --batch-check >/dev/null";
-                        cerr << cmd << endl;
-                        //string cmd = "cd '" + repository.path() + "';git cat-file blob " + oid + ">/dev/null";
-                        //cerr << cmd << endl;
-                        if (system(cmd.c_str())) {
-                            throw "batch git cat-file subprocess failed";
-                        }
-                    } else {
+                    if (repo_entry.fetch_missing()) {
+                        continue;
+                    } else{
                         break;
                     }
-                        /*repository.for_each_branch([&](cppgit2::reference branch)
-                        {
-                            if (repository.is_descendant_of(branch.resolve().target(), commit.id())) {
-                                    // the remote containing branch should have oid
-                                    std::string remote_name = repository.branch_remote_name(branch.name());
-                                    cppgit2::remote remote = repository.lookup_remote(remote_name);
-                                    //if (!remote.is_connected()) {
-                                    //    remote.connect(cppgit2::connection_direction::fetch);
-                                    //}
-                                    std::vector<std::string> refspecs;
-                                    std::string missing_commit = commit.id().to_hex_string();
-                                    refspecs.push_back(missing_commit + ":" + remote_name + "/single_commit");
-                                    //refspecs.push_back(branch.name() + ":" + remote_name + "/" + branch.name());
-                                    cppgit2::strarray refspecs_array(refspecs);
-                                    remote.download(refspecs_array);
-                                    //string cmd = "cd '" + repository.path() + "'; git fetch " + 
-                            }
-                        }, cppgit2::branch::branch_type::remote);
-                        */
-                    //}
                 }
                 diff.for_each([&](const cppgit2::diff::delta & need_eeg_and_blockchain, float progress) // pain shown
                 { // input files
