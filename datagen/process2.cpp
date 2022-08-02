@@ -175,7 +175,9 @@ int main(int argc, char **argv)
 
                 cerr << "looping over diff: " << commit.id().to_hex_string() << endl;
                 // fetch missing objects?
+                static thread_local vector<cppgit2::oid> missing_objects;
                 while ("checking all objects are present") {
+                    missing_objects.clear();
                     try {
                         diff.for_each([&](const cppgit2::diff::delta & need_eeg_and_blockchain, float progress) {
                             cppgit2::diff::delta::file files[2] = {need_eeg_and_blockchain.old_file(), need_eeg_and_blockchain.new_file()};
@@ -183,21 +185,41 @@ int main(int argc, char **argv)
                                 cppgit2::oid id = file.id();
                                 // process objects that are blobs with nonzero ids. object type is stored in file mode.
                                 if ((file.mode() & 0777000) == (GIT_FILEMODE_BLOB & 0777000) && !id.is_zero()) {
-                                    repository.lookup_blob(id);
+                                    try {
+                                        repository.lookup_blob(id);
+                                    } catch (cppgit2::git_exception &exc) {
+                                        missing_objects.push_back(id);
+                                    }
                                 }
                             }
                         });
-                        break;
                     } catch (cppgit2::git_exception &exc) {
                         string msg = exc.what();
                         size_t end = msg.rfind(')');
                         size_t start = msg.rfind('(', end) + 1;
-                        string oid = msg.substr(start, end - start);
-                        cppgit2::oid oidoid(oid);
-
-                        cerr << "Downloading " << oid << " ..." << endl;
-
-                        repository.for_each_branch([&](cppgit2::reference branch)
+                        cppgit2::oid id(msg.substr(start, end - start));
+                        missing_objects.push_back(id);
+                    }
+                    if (!missing_objects.empty()) {
+                        cerr << "Downloading";
+                        string cmd = "cd '" + repository.path() + "';{ ";
+                        for (auto & missing_object : missing_objects) {
+                            string id = missing_object.to_hex_string();
+                            cerr << " " << id;
+                            cmd += "echo " + id + "; ";
+                        }
+                        cerr << " ..." << endl;
+                        cmd += "} | git cat-file --batch-check >/dev/null";
+                        cerr << cmd << endl;
+                        //string cmd = "cd '" + repository.path() + "';git cat-file blob " + oid + ">/dev/null";
+                        //cerr << cmd << endl;
+                        if (system(cmd.c_str())) {
+                            throw "batch git cat-file subprocess failed";
+                        }
+                    } else {
+                        break;
+                    }
+                        /*repository.for_each_branch([&](cppgit2::reference branch)
                         {
                             if (repository.is_descendant_of(branch.resolve().target(), commit.id())) {
                                     // the remote containing branch should have oid
@@ -215,15 +237,8 @@ int main(int argc, char **argv)
                                     //string cmd = "cd '" + repository.path() + "'; git fetch " + 
                             }
                         }, cppgit2::branch::branch_type::remote);
-
-                        // this can be done directly by using something like repository.mergebase to check
-                        // each remote branch for the commit using remote.for_each_branch, then fetching from the remote
-                        //string cmd = "cd '" + repository.path() + "';git cat-file blob " + oid + ">/dev/null";
-                        //cerr << cmd << endl;
-                        //if (system(cmd.c_str())) {
-                        //    throw;
-                       // }
-                    }
+                        */
+                    //}
                 }
                 diff.for_each([&](const cppgit2::diff::delta & need_eeg_and_blockchain, float progress) // pain shown
                 { // input files
