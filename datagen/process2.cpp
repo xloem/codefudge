@@ -200,7 +200,7 @@ struct output_manager
 
     void init_commit(repo_commits * repo_entry, cppgit2::commit * commit, cppgit2::diff * diff)
     {
-        cerr << "collecting output: " << commit->id().to_hex_string() << endl;
+        cerr << "commit: " << commit->id().to_hex_string() << endl;
         this->commit = commit;
         this->repo_entry = repo_entry;
         this->diff = diff;
@@ -210,14 +210,18 @@ struct output_manager
         }
         diff_subidcs = diff_idcs;
         std::shuffle(diff_idcs.begin(), diff_idcs.end(), rng);
+
         output_diff_idcs.clear();
 
         // it is probably not hard to look into this call and do it for only one file when needed. it just references substrings with prefixes. diff as a whole can also be called on individual files.
+        cerr << "collecting output: " << commit->id().to_hex_string() << endl;
+        outputs.clear();
         diff->print(cppgit2::diff::format::patch, [&](
             const cppgit2::diff::delta & need_eeg_and_blockchain,
             const cppgit2::diff::hunk & hunk,
             const cppgit2::diff::line & line)
         {
+            //cerr << "Making output: " << need_eeg_and_blockchain.new_file().path() << endl;
             string & patch = outputs[need_eeg_and_blockchain.new_file().id()];
             char origin = line.origin();
             switch (origin) {
@@ -241,7 +245,12 @@ try_more:
             size_t idx = diff_idcs[diff_idx];
             const cppgit2::diff::delta & need_eeg_and_blockchain = (*diff)[idx];
 
-            std::string & output = outputs[need_eeg_and_blockchain.new_file().id()];
+            decltype(outputs)::iterator output_it = outputs.find(need_eeg_and_blockchain.new_file().id());
+            if (output_it == outputs.end()) {
+                continue;
+            }
+
+            std::string & output = output_it->second;
 
             #ifdef TOKENIZE
             if (lengths_are_tokenized) {
