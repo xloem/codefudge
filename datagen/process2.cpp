@@ -7,6 +7,7 @@
 
 using namespace std;
 
+#include <cppgit2/patch.hpp>
 #include <cppgit2/repository.hpp>
 
 using namespace cppgit2;
@@ -177,7 +178,8 @@ struct output_manager
         string file_name_end,
         string file_content_start,
         string file_content_end,
-        string input_end
+        string input_end,
+        cppgit2::diff::options::flag diff_flags
     )
     : rng{seed},
       max_input_length(max_input_length),
@@ -196,7 +198,9 @@ struct output_manager
       file_content_start(file_content_start),
       file_content_end(file_content_end),
       input_end(input_end)
-    { }
+    {
+        diff_options.set_flags(diff_flags);
+    }
 
     void init_commit(repo_commits * repo_entry, cppgit2::commit * commit, cppgit2::diff * diff)
     {
@@ -213,6 +217,7 @@ struct output_manager
 
         output_diff_idcs.clear();
 
+#if 0
         // it is probably not hard to look into this call and do it for only one file when needed. it just references substrings with prefixes. diff as a whole can also be called on individual files.
         cerr << "collecting output: " << commit->id().to_hex_string() << endl;
         outputs.clear();
@@ -231,6 +236,7 @@ struct output_manager
             }
             patch.append(line.content(), line.content_length());
         });
+#endif
     }
 
     size_t process(size_t max_diffs_per_commit)
@@ -245,12 +251,17 @@ try_more:
             size_t idx = diff_idcs[diff_idx];
             const cppgit2::diff::delta & need_eeg_and_blockchain = (*diff)[idx];
 
+#if 0
             decltype(outputs)::iterator output_it = outputs.find(need_eeg_and_blockchain.new_file().id());
             if (output_it == outputs.end()) {
                 continue;
             }
 
             std::string & output = output_it->second;
+#endif
+            if (!get_output(idx)) {
+                continue;
+            }
 
             #ifdef TOKENIZE
             if (lengths_are_tokenized) {
@@ -262,6 +273,7 @@ try_more:
                 output_size = output.size();
             }
             // BUGS: cut_input and cut_output not honored at all
+            //   // i think it could be helpful to parameterise output/input and put length checking into member functions that can be called from content accumulators
             if (!cut_output && output_size > max_output_length) {
                 continue;
             }
@@ -302,6 +314,78 @@ try_more:
             goto try_more;
         }
         return diffs_output;
+    }
+
+    bool get_output(size_t idx)
+    {
+        const cppgit2::diff::delta & need_eeg_and_blockchain = (*diff)[idx];
+        auto status = need_eeg_and_blockchain.status();
+        if (status == cppgit2::diff::delta::type::unmodified) {
+            return false;
+        }
+        cppgit2::patch patch(*diff, idx);
+        //if (patch.size(true, true, true) 
+        output = patch.to_buffer().to_string();
+        return true;
+
+#if 0
+        auto old_file = need_eeg_and_blockchain.old_file();
+        auto new_file = need_eeg_and_blockchain.new_file();
+        cppgit2::blob old_blob, new_blob;
+        void const * old_buffer, * new_buffer;
+        size_t old_buffer_length, new_buffer_length;
+        bool result = true;
+        if (status == cppgit2::diff::delta::type::added) {
+            old_buffer_length = 0;
+        } else {
+            try {
+                old_blob = repo_entry->repository.lookup_blob(old_file.id());
+                old_buffer = old_blob.raw_contents();
+                old_buffer_length = old_blob.raw_size();
+            } catch (cppgit2::git_exception &exc) {
+                repo_entry->missing(exc, commit->id());
+                result = false;
+            }
+        }
+        if (status == cppgit2::diff::delta::type::deleted) {
+            new_buffer_length = 0;
+        } else {
+            try {
+                new_blob = repo_entry->repository.lookup_blob(new_file.id());
+                new_buffer = new_blob.raw_contents();
+                new_buffer_length = new_blob.raw_size();
+            } catch (cppgit2::git_exception &exc) {
+                repo_entry->missing(exc, commit->id());
+                result = false;
+            }
+        }
+        if (!result) {
+            return result;
+        }
+        output.clear();
+        cppgit2::diff::diff_between_buffers(
+            old_buffer, old_buffer_length, old_file.path(),
+            new_buffer, new_buffer_length, new_file.path(),
+            diff_options,
+            [](diff::delta const &, float){},
+            [](diff::delta const &, diff::binary const &){},
+            [](diff::delta const &, diff::hunk const &){},
+            [&]
+        (
+                cppgit2::diff::delta const & need_eeg_and_blockchain,
+                cppgit2::diff::hunk const & hunk,
+                cppgit2::diff::line const & line
+        ) {
+            char origin = line.origin();
+            switch (origin) {
+            case '-': case '+': case ' ':
+                output += line.origin();
+            default:;
+            }
+            output.append(line.content(), line.content_length());
+        });
+        return true;
+#endif
     }
 
     bool add_input(const cppgit2::diff::delta & need_eeg_and_blockchain)
@@ -372,6 +456,7 @@ try_more:
     std::string file_content_start;
     std::string file_content_end;
     std::string input_end;
+    cppgit2::diff::options diff_options;
     repo_commits * repo_entry;
     cppgit2::commit const * commit;
     cppgit2::diff const * diff;
@@ -407,6 +492,18 @@ int main(int argc, char **argv)
     string file_content_end = "";
     string input_end = "</s>";
 
+    diff::options diff_options;
+    diff_options.set_flags(
+        diff::options::flag::include_unmodified |
+        diff::options::flag::include_typechange |
+        diff::options::flag::ignore_filemode |
+        diff::options::flag::ignore_submodules |
+        diff::options::flag::indent_heuristic |
+        diff::options::flag::patience |
+        diff::options::flag::minimal |
+        diff::options::flag::show_binary
+    );
+
     default_random_engine rng{seed};
     static thread_local output_manager outputter(
         seed,
@@ -425,22 +522,11 @@ int main(int argc, char **argv)
         file_name_end,
         file_content_start,
         file_content_end,
-        input_end
+        input_end,
+        diff_options.flags()
     );
 
     static thread_local unordered_map<string, repo_commits> repos;
-
-    diff::options diff_options;
-    diff_options.set_flags(
-        diff::options::flag::include_unmodified |
-        diff::options::flag::include_typechange |
-        diff::options::flag::ignore_filemode |
-        diff::options::flag::ignore_submodules |
-        diff::options::flag::indent_heuristic |
-        diff::options::flag::patience |
-        diff::options::flag::minimal |
-        diff::options::flag::show_binary
-    );
 
     for (unsigned int repo_cycle = 0; repo_cycle < cycles_over_repos; ++ repo_cycle)
     {
