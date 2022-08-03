@@ -158,6 +158,223 @@ struct repo_commits
     }
 };
 
+struct output_manager
+{
+    output_manager(
+        size_t seed,
+        size_t max_input_length,
+        size_t max_output_length,
+        #ifdef TOKENIZE
+        bool lengths_are_tokenized,
+        #endif
+        bool cut_input,
+        bool cut_output,
+        string tokenizer_path,
+        string input_start,
+        string message_start,
+        string message_end,
+        string file_name_start,
+        string file_name_end,
+        string file_content_start,
+        string file_content_end,
+        string input_end
+    )
+    : rng{seed},
+      max_input_length(max_input_length),
+      max_output_length(max_output_length),
+      #ifdef TOKENIZE
+      lengths_are_tokenized(lengths_are_tokenized),
+      #endif
+      cut_input(cut_input),
+      cut_output(cut_output),
+      tokenizer_path(tokenizer_path),
+      input_start(input_start),
+      message_start(message_start),
+      message_end(message_end),
+      file_name_start(file_name_start),
+      file_name_end(file_name_end),
+      file_content_start(file_content_start),
+      file_content_end(file_content_end),
+      input_end(input_end)
+    { }
+
+    void init_commit(repo_commits * repo_entry, cppgit2::commit * commit, cppgit2::diff * diff)
+    {
+        cerr << "collecting output: " << commit->id().to_hex_string() << endl;
+        this->commit = commit;
+        this->repo_entry = repo_entry;
+        this->diff = diff;
+        diff_idcs.resize(diff->size());
+        for (size_t i = 0; i < diff->size(); ++i) {
+            diff_idcs[i] = i;
+        }
+        diff_subidcs = diff_idcs;
+        std::shuffle(diff_idcs.begin(), diff_idcs.end(), rng);
+        output_diff_idcs.clear();
+
+        // it is probably not hard to look into this call and do it for only one file when needed. it just references substrings with prefixes. diff as a whole can also be called on individual files.
+        diff->print(cppgit2::diff::format::patch, [&](
+            const cppgit2::diff::delta & need_eeg_and_blockchain,
+            const cppgit2::diff::hunk & hunk,
+            const cppgit2::diff::line & line)
+        {
+            string & patch = outputs[need_eeg_and_blockchain.new_file().id()];
+            char origin = line.origin();
+            switch (origin) {
+            case '-': case '+': case ' ':
+                patch += line.origin();
+            default:;
+            }
+            patch.append(line.content(), line.content_length());
+        });
+    }
+
+    size_t process(size_t max_diffs_per_commit)
+    {
+        size_t output_size = 0;
+        size_t diffs_output = 0;
+        output_diff_idcs.clear();
+        cerr << "looping over diff: " << commit->id().to_hex_string() << endl;
+try_more:
+        for (size_t diff_idx = 0; diffs_output < max_diffs_per_commit && diff_idx < diff_idcs.size(); ++ diff_idx)
+        {
+            size_t idx = diff_idcs[diff_idx];
+            const cppgit2::diff::delta & need_eeg_and_blockchain = (*diff)[idx];
+
+            std::string & output = outputs[need_eeg_and_blockchain.new_file().id()];
+
+            #ifdef TOKENIZE
+            if (lengths_are_tokenized) {
+                tokenization = tokenizer->encode(output, true);
+                output_size = tokenization->get_ids().size();
+            } else
+            #endif
+            {
+                output_size = output.size();
+            }
+            // BUGS: cut_input and cut_output not honored at all
+            if (!cut_output && output_size > max_output_length) {
+                continue;
+            }
+
+            output_diff_idcs.insert(idx);
+
+            input = input_start + message_start + commit->message() + message_end;
+            
+            if (!add_input(need_eeg_and_blockchain)) {
+                continue;
+            }
+
+            std::shuffle(diff_subidcs.begin(), diff_subidcs.end(), rng);
+            for (size_t diff_subidx = 0; input_size < max_input_length && diff_subidx < diff_subidcs.size(); ++ diff_subidx)
+            {
+                size_t idx = diff_subidcs[diff_subidx];
+                if (output_diff_idcs.count(idx)) {
+                    continue;
+                }
+                const cppgit2::diff::delta & need_eeg_and_blockchain = (*diff)[idx];
+                add_input(need_eeg_and_blockchain);
+            }
+
+            output_diff_idcs.erase(idx);
+
+            static thread_local rapidjson::StringBuffer linebuf;
+            static thread_local rapidjson::Writer<rapidjson::StringBuffer> lineout;
+            linebuf.Clear();
+            lineout.Reset(linebuf);
+            lineout.StartObject();
+            lineout.String("input", 5); lineout.String(input.data(), input.size());
+            lineout.String("label", 5); lineout.String(output.data(), output.size());
+            lineout.EndObject();
+            puts(linebuf.GetString());
+            ++ diffs_output;
+        }
+        if (repo_entry->fetch_missing()) {
+            goto try_more;
+        }
+        return diffs_output;
+    }
+
+    bool add_input(const cppgit2::diff::delta & need_eeg_and_blockchain)
+    {
+        auto old_file = need_eeg_and_blockchain.old_file();
+        auto old_id = old_file.id();
+        more_input_size = 0;
+
+        if (
+            (old_file.mode() & 0777000) != (GIT_FILEMODE_BLOB & 0777000) ||
+            old_id.is_zero() ||
+            old_file.flags() & (uint32_t)cppgit2::diff::delta::flag::binary
+            #ifndef TOKENIZE
+            || (!cut_input && old_file.size() > max_input_length)
+            #endif
+        ) {
+            return false;
+        }
+
+        blob content;
+        try {
+            content = repo_entry->repository.lookup_blob(old_id);
+        } catch (cppgit2::git_exception &exc) {
+            repo_entry->missing(exc, commit->id());
+            return false;
+        }
+
+        more_input
+            = file_name_start
+            + old_file.path()
+            + file_name_end
+            + file_content_start
+            + string((char*)content.raw_contents(), content.raw_size())
+            + file_content_end
+        ;
+        #ifdef TOKENIZE
+        if (lengths_are_tokenized) {
+            tokenization = tokenizer->encode(input, true);
+            more_input_size = tokenization->get_ids().size();
+        } else
+        #endif
+        {
+            more_input_size = input.size();
+        }
+        if (!cut_input && input_size + more_input_size > max_input_length) {
+            return false;
+        }
+        input += more_input;
+        input_size += more_input_size;
+        return true;
+    }
+
+    std::default_random_engine rng;
+    size_t seed;
+    size_t max_input_length;
+    size_t max_output_length;
+    #ifdef TOKENIZE
+    bool lengths_are_tokenized;
+    #endif
+    bool cut_input;
+    bool cut_output;
+    std::string tokenizer_path;
+    std::string input_start;
+    std::string message_start;
+    std::string message_end;
+    std::string file_name_start;
+    std::string file_name_end;
+    std::string file_content_start;
+    std::string file_content_end;
+    std::string input_end;
+    repo_commits * repo_entry;
+    cppgit2::commit const * commit;
+    cppgit2::diff const * diff;
+    std::vector<size_t> diff_idcs, diff_subidcs;
+    std::unordered_set<size_t> output_diff_idcs;
+    std::unordered_map<cppgit2::oid, std::string, oid_hash> outputs;
+    cppgit2::blob content;
+    std::string more_input;
+    std::string input, output;
+    size_t more_input_size, input_size;
+};
+
 int main(int argc, char **argv)
 {
     unsigned int max_diffs_per_commit = 1;
@@ -182,6 +399,25 @@ int main(int argc, char **argv)
     string input_end = "</s>";
 
     default_random_engine rng{seed};
+    static thread_local output_manager outputter(
+        seed,
+        max_input_length,
+        max_output_length,
+        #ifdef TOKENIZE
+        lengths_are_tokenized,
+        #endif
+        cut_input,
+        cut_output,
+        tokenizer_path,
+        input_start,
+        message_start,
+        message_end,
+        file_name_start,
+        file_name_end,
+        file_content_start,
+        file_content_end,
+        input_end
+    );
 
     static thread_local unordered_map<string, repo_commits> repos;
 
@@ -208,6 +444,7 @@ int main(int argc, char **argv)
             auto & repository = repo_entry.repository;
             auto & commit_oids = repo_entry.commits;
 
+            // this could simply select a random index repeatedly
             shuffle(commit_oids.begin(), commit_oids.end(), rng);
     
             int commits_output = 0;
@@ -252,6 +489,11 @@ int main(int argc, char **argv)
                 // diff.for_each([](const cppgit2::diff::delta &, float) {})
                 // diff.print(diff:format, [](const diff
     
+                outputter.init_commit(&repo_entry, &commit, &diff);
+                if (outputter.process(max_diffs_per_commit)) {
+                    commits_output ++;
+                }
+#if 0
                 // OPTIMIZE: this selection of inputs can be done by randomizing a range of integers and picking by integers
                 // no need to enumerate them all in the next block
     
@@ -356,23 +598,108 @@ int main(int argc, char **argv)
                 shuffle(diff_oids.begin(), diff_oids.end(), rng);
                 int diffs_output = 0;
 
-                //static thread_local vector<size_t> diff_idcs;
-                //diff_idcs.resize(diff.size());
-                //for (size_t i = 0; i < diff.size; ++i ) {
-                //        diff_idcs[i] = i;
-                //}
-                //shuffle(diff_idcs.begin(), diff_idcs.end(), rng);
-                //for (int diff_idx = 0; diffs_output < max_diffs_per_commit && diff_idx < diff_idcs.size(); ++ diff_idx) {
-                //    const cppgit2::diff::delta & need_eeg_and_blockchain = diff[diff_idcs[diff_idx]];
-                //    auto ident = make_pair<oid,oid>(
-                //        need_eeg_and_blockchain.old_file().id(),
-                //        need_eeg_and_blockchain.new_file().id()
-                //    ); // .path()
-                //    
-                //    // INPUT left off here
-                //
-                //    // OUTPUT
-                //    string output = outputs[ident];
+                // new organisation
+                static thread_local vector<size_t> diff_idcs, diff_subidcs;
+                diff_idcs.resize(diff.size());
+                for (size_t i = 0; i < diff.size; ++i ) {
+                        diff_idcs[i] = i;
+                }
+                diff_subidcs = diff_idcs;
+iterate:
+                // shuffling rather than picking randomly repeatedly lets us download all the missing objects after a loop
+                shuffle(diff_idcs.begin(), diff_idcs.end(), rng);
+                static thread_local std::unordered_set<int> output_diff_idcs;
+                for (int diff_idx = 0; diffs_output < max_diffs_per_commit && diff_idx < diff_idcs.size(); ++ diff_idx) {
+                    const cppgit2::diff::delta & need_eeg_and_blockchain = diff[diff_idcs[diff_idx]];
+                    auto old_file = need_eeg_and_blockchain.old_file();
+                    auto old_id = old_file.id();
+                    size_t input_size = 0;
+
+                    if (
+                        (old_file.mode() & 0777000) != (GIT_FILEMODE_BLOB & 0777000) ||
+                        old_id.is_zero() ||
+                        old_file.flags() && cppgit2::diff::flag::binary
+#ifndef TOKENIZE
+                        || (!cut_input && old_file.size() > max_input_length)
+#endif
+                    ) {
+                        continue;
+                    }
+
+                    static thread_local blob content;
+                    try {
+                        content = repository.lookup_blob(old_id);
+                    } catch (cppgit2::git_exception &exc) {
+                        repo_entry.missing(exc, commit.id());
+                        continue;
+                    }
+
+                    static thread_local string input;
+                    input.clear();
+                    input_size = 0;
+                    output_diff_idcs.reset();
+                    input
+                        += file_name_start
+                        + need_eeg_and_blockchain.old_file.path()
+                        + file_name_end
+                        + file_content_start
+                        + string((char*)content.raw_contents(), content.raw_size())
+                        + file_content_end
+                    ;
+                        if (lengths_are_tokenized) {
+                            tokenization = tokenizer->encode(input, true);
+                            input_size = tokenization->get_ids().size();
+                        } else
+                        {
+                            input_size = input.size();
+                        }
+                    input_size += input.size();
+
+                    output_diff_idcs.insert(diff_idx);
+
+                    shuffle(diff_subidcs.begin(), diff_subidcs.end(), rng);
+                    for (int diff_subidx = 0; diff_subidx < diff_subidcs.size(); ++ diff_subidx) {
+                        if (output_diff_idcs.count(diff_subidcs[diff_subidx]) {
+                            continue;
+                        }
+                        const cppgit2::diff::delta & need_eeg_and_blockchain = diff[diff_idcs[diff_idx]];
+                        auto old_file = need_eeg_and_blockchain.old_file();
+                        auto old_id = old_file.id();
+                        if (
+                            (old_file.mode() & 0777000) != (GIT_FILEMODE_BLOB & 0777000) ||
+                            old_id.is_zero() ||
+                            old_file.flags() && cppgit2::diff::flag::binary
+#ifndef TOKENIZE
+                            || (!cut_input && input_size + old_file.size() > max_input_length)
+#endif
+                        ) {
+                            continue;
+                        }
+                        try {
+                            content = repository.lookup_blob(old_id);
+                        } catch (cppgit2::git_exception &exc) {
+                            repo_entry.missing(exc, commit.id());
+                            continue;
+                        }
+                        input
+                            += file_name_start
+                            + need_eeg_and_blockchain.old_file.path()
+                            + file_name_end
+                            + file_content_start
+                            + string((char*)content.raw_contents(), content.raw_size())
+                            + file_content_end
+                        ;
+                        input_size += input.size();
+                        output_diff_idcs.insert(diff_idx);
+                        // INPUT left off here
+                        //   // the above code happens twice 
+                    }
+
+
+                    
+                
+                    // OUTPUT
+                    string output = outputs[ident];
 
                 //    #ifdef TOKENIZE
                 //    if (lengths_are_tokenized) {
@@ -388,9 +715,12 @@ int main(int argc, char **argv)
                 //    } else
                 //    #endif
                 //    {
-                //        output_size = output.size();
+                    output_size = output.size();
                 //    }
-                //}
+                }
+                if (repo_entry.fetch_missing()) {
+                    goto iterate;
+                }
     
                 for(int diff_idx = 0; diffs_output < max_diffs_per_commit && diff_idx < total; ++ diff_idx) {
                     auto ident = diff_oids[diff_idx];
@@ -515,6 +845,7 @@ int main(int argc, char **argv)
                 if (diffs_output > 0) {
                     ++ commits_output;
                 }
+#endif
             }
         }
     }
