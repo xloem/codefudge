@@ -5,11 +5,14 @@
 
 LDLIBS=-lcppgit2 -lgit2 $(TOKENIZERS_LDLIBS)
 CPPFLAGS=$(TOKENIZERS_CPPFLAGS)
-LDFLAGS=$(TOKENIZERS_CPPFLAGS)
+LDFLAGS=$(TOKENIZERS_LDFLAGS)
 
-CXXFLAGS+=-ggdb -O0
+CXXFLAGS+=-ggdb -O3
 
 process2: process2.cpp $(TOKENIZERS_DEPPATH)
+
+clean:
+	-rm process2
 
 tinytokenizers/target/release/libtinytokenizers.a: tinytokenizers/src/tinytokenizers.rs
 	cd tinytokenizers && cargo build --release

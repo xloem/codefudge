@@ -170,7 +170,9 @@ struct output_manager
         #endif
         bool cut_input,
         bool cut_output,
+        #ifdef TOKENIZE
         string tokenizer_path,
+        #endif
         string input_start,
         string message_start,
         string message_end,
@@ -182,13 +184,9 @@ struct output_manager
         cppgit2::diff::options::flag diff_flags
     )
     : rng{seed},
-      max_input_length(max_input_length),
-      max_output_length(max_output_length),
       #ifdef TOKENIZE
-      lengths_are_tokenized(lengths_are_tokenized),
+      tokenizer(from_file(tokenizer_path)),
       #endif
-      cut_input(cut_input),
-      cut_output(cut_output),
       tokenizer_path(tokenizer_path),
       input_start(input_start),
       message_start(message_start),
@@ -199,6 +197,24 @@ struct output_manager
       file_content_end(file_content_end),
       input_end(input_end)
     {
+        #ifdef TOKENIZE
+        if (lengths_are_tokenized) {
+            input.max_token_ids = max_input_length;
+            input.max = max_input_length * 4;
+            input.tokenizer = &tokenizer;
+            output.max_token_ids = max_output_length;
+            output.max = max_output_length * 4;
+            output.tokenizer = &tokenizer;
+        } else
+        #endif
+        {
+            input.max_token_ids = 0;
+            input.max = max_input_length;
+            output.max_token_ids = 0;
+            output.max = max_output_length;
+        }
+        input.cut = cut_input;
+        output.cut = cut_output;
         diff_options.set_flags(diff_flags);
     }
 
@@ -216,27 +232,6 @@ struct output_manager
         std::shuffle(diff_idcs.begin(), diff_idcs.end(), rng);
 
         output_diff_idcs.clear();
-
-#if 0
-        // it is probably not hard to look into this call and do it for only one file when needed. it just references substrings with prefixes. diff as a whole can also be called on individual files.
-        cerr << "collecting output: " << commit->id().to_hex_string() << endl;
-        outputs.clear();
-        diff->print(cppgit2::diff::format::patch, [&](
-            const cppgit2::diff::delta & need_eeg_and_blockchain,
-            const cppgit2::diff::hunk & hunk,
-            const cppgit2::diff::line & line)
-        {
-            //cerr << "Making output: " << need_eeg_and_blockchain.new_file().path() << endl;
-            string & patch = outputs[need_eeg_and_blockchain.new_file().id()];
-            char origin = line.origin();
-            switch (origin) {
-            case '-': case '+': case ' ':
-                patch += line.origin();
-            default:;
-            }
-            patch.append(line.content(), line.content_length());
-        });
-#endif
     }
 
     size_t process(size_t max_diffs_per_commit)
@@ -244,50 +239,41 @@ struct output_manager
         size_t output_size = 0;
         size_t diffs_output = 0;
         output_diff_idcs.clear();
+        std::string commit_msg = commit->message();
         cerr << "looping over diff: " << commit->id().to_hex_string() << endl;
+        if (!input.set(input_start.data(), input_start.size())) {
+            throw std::invalid_argument("input_start does not fit in input");
+        }
+        if (!input.append(message_start.data(), message_start.size())) {
+            throw std::invalid_argument("message_start does not fit in input");
+        }
+        auto commit_message = commit->message();
+        if (!input.append(commit_message.data(), commit_message.size())) {
+            return 0;
+        }
+        if (!input.append(message_end.data(), message_end.size())) {
+            return 0;
+        }
+        more_input.to_append_to(input);
 try_more:
         for (size_t diff_idx = 0; diffs_output < max_diffs_per_commit && diff_idx < diff_idcs.size(); ++ diff_idx)
         {
             size_t idx = diff_idcs[diff_idx];
             const cppgit2::diff::delta & need_eeg_and_blockchain = (*diff)[idx];
 
-#if 0
-            decltype(outputs)::iterator output_it = outputs.find(need_eeg_and_blockchain.new_file().id());
-            if (output_it == outputs.end()) {
-                continue;
-            }
-
-            std::string & output = output_it->second;
-#endif
             if (!get_output(idx)) {
                 continue;
             }
 
-            #ifdef TOKENIZE
-            if (lengths_are_tokenized) {
-                tokenization = tokenizer->encode(output, true);
-                output_size = tokenization->get_ids().size();
-            } else
-            #endif
-            {
-                output_size = output.size();
-            }
-            // BUGS: cut_input and cut_output not honored at all
-            //   // i think it could be helpful to parameterise output/input and put length checking into member functions that can be called from content accumulators
-            if (!cut_output && output_size > max_output_length) {
-                continue;
-            }
-
             output_diff_idcs.insert(idx);
-
-            input = input_start + message_start + commit->message() + message_end;
             
+            more_input.clear();
             if (!add_input(need_eeg_and_blockchain)) {
                 continue;
             }
 
             std::shuffle(diff_subidcs.begin(), diff_subidcs.end(), rng);
-            for (size_t diff_subidx = 0; input_size < max_input_length && diff_subidx < diff_subidcs.size(); ++ diff_subidx)
+            for (size_t diff_subidx = 0; input.can_append(file_name_start.size() + file_name_end.size() + file_content_start.size() + file_content_end.size() + 16) && diff_subidx < diff_subidcs.size(); ++ diff_subidx)
             {
                 size_t idx = diff_subidcs[diff_subidx];
                 if (output_diff_idcs.count(idx)) {
@@ -304,8 +290,9 @@ try_more:
             linebuf.Clear();
             lineout.Reset(linebuf);
             lineout.StartObject();
-            lineout.String("input", 5); lineout.String(input.data(), input.size());
-            lineout.String("label", 5); lineout.String(output.data(), output.size());
+            more_input.data = input.data + more_input.data;
+            lineout.String("input", 5); lineout.String(more_input.data.data(), more_input.data.size());
+            lineout.String("label", 5); lineout.String(output.data.data(), output.data.size());
             lineout.EndObject();
             puts(linebuf.GetString());
             ++ diffs_output;
@@ -319,89 +306,41 @@ try_more:
     bool get_output(size_t idx)
     {
         const cppgit2::diff::delta & need_eeg_and_blockchain = (*diff)[idx];
+        cppgit2::patch patch;
         auto status = need_eeg_and_blockchain.status();
         if (status == cppgit2::diff::delta::type::unmodified) {
             return false;
         }
-        cppgit2::patch patch(*diff, idx);
-        //if (patch.size(true, true, true) 
-        output = patch.to_buffer().to_string();
-        return true;
-
-#if 0
-        auto old_file = need_eeg_and_blockchain.old_file();
-        auto new_file = need_eeg_and_blockchain.new_file();
-        cppgit2::blob old_blob, new_blob;
-        void const * old_buffer, * new_buffer;
-        size_t old_buffer_length, new_buffer_length;
-        bool result = true;
-        if (status == cppgit2::diff::delta::type::added) {
-            old_buffer_length = 0;
-        } else {
-            try {
-                old_blob = repo_entry->repository.lookup_blob(old_file.id());
-                old_buffer = old_blob.raw_contents();
-                old_buffer_length = old_blob.raw_size();
-            } catch (cppgit2::git_exception &exc) {
-                repo_entry->missing(exc, commit->id());
-                result = false;
-            }
-        }
-        if (status == cppgit2::diff::delta::type::deleted) {
-            new_buffer_length = 0;
-        } else {
-            try {
-                new_blob = repo_entry->repository.lookup_blob(new_file.id());
-                new_buffer = new_blob.raw_contents();
-                new_buffer_length = new_blob.raw_size();
-            } catch (cppgit2::git_exception &exc) {
-                repo_entry->missing(exc, commit->id());
-                result = false;
-            }
-        }
-        if (!result) {
-            return result;
+        try {
+            patch = cppgit2::patch(*diff, idx);
+        } catch (cppgit2::git_exception &exc) {
+            repo_entry->missing(exc, commit->id());
+            return false;
         }
         output.clear();
-        cppgit2::diff::diff_between_buffers(
-            old_buffer, old_buffer_length, old_file.path(),
-            new_buffer, new_buffer_length, new_file.path(),
-            diff_options,
-            [](diff::delta const &, float){},
-            [](diff::delta const &, diff::binary const &){},
-            [](diff::delta const &, diff::hunk const &){},
-            [&]
-        (
-                cppgit2::diff::delta const & need_eeg_and_blockchain,
-                cppgit2::diff::hunk const & hunk,
-                cppgit2::diff::line const & line
-        ) {
-            char origin = line.origin();
-            switch (origin) {
-            case '-': case '+': case ' ':
-                output += line.origin();
-            default:;
-            }
-            output.append(line.content(), line.content_length());
-        });
-        return true;
-#endif
+        if (!output.can_append(patch.size(true, true, true))) {
+            return false;
+        }
+        cppgit2::data_buffer patch_buffer = patch.to_buffer();
+        git_buf const * patch_c_struct = patch_buffer.c_ptr(); 
+        return output.append(patch_c_struct->ptr, patch_c_struct->size);
     }
 
     bool add_input(const cppgit2::diff::delta & need_eeg_and_blockchain)
     {
         auto old_file = need_eeg_and_blockchain.old_file();
         auto old_id = old_file.id();
-        more_input_size = 0;
 
         if (
             (old_file.mode() & 0777000) != (GIT_FILEMODE_BLOB & 0777000) ||
             old_id.is_zero() ||
             old_file.flags() & (uint32_t)cppgit2::diff::delta::flag::binary
-            #ifndef TOKENIZE
-            || (!cut_input && old_file.size() > max_input_length)
-            #endif
         ) {
+            return false;
+        }
+
+        static thread_local std::string old_path = old_file.path();
+        if (!more_input.can_append(file_name_start.size() + old_path.size() + file_name_end.size() + file_content_start.size() + old_file.size() + file_content_end.size())) {
             return false;
         }
 
@@ -413,40 +352,135 @@ try_more:
             return false;
         }
 
-        more_input
-            = file_name_start
-            + old_file.path()
-            + file_name_end
-            + file_content_start
-            + string((char*)content.raw_contents(), content.raw_size())
-            + file_content_end
-        ;
-        #ifdef TOKENIZE
-        if (lengths_are_tokenized) {
-            tokenization = tokenizer->encode(input, true);
-            more_input_size = tokenization->get_ids().size();
-        } else
-        #endif
-        {
-            more_input_size = input.size();
+        bool success = more_input.append(file_name_start);
+        success &= more_input.append(old_path);
+        success &= more_input.append(file_name_end);
+        success &= more_input.append(file_content_start);
+        success &= more_input.append(content.raw_contents(), content.raw_size());
+        success &= more_input.append(file_content_end);
+        if (!success) {
+            throw std::logic_error("actual append failed after can_append succeeded; missing way to revert state to before partial append; maybe length_tracked_value could push/pop its state leaving more_input unneeded");
         }
-        if (!cut_input && input_size + more_input_size > max_input_length) {
-            return false;
-        }
-        input += more_input;
-        input_size += more_input_size;
         return true;
     }
 
-    std::default_random_engine rng;
-    size_t seed;
-    size_t max_input_length;
-    size_t max_output_length;
+    struct length_tracked_value
+    {
+        size_t max;
     #ifdef TOKENIZE
-    bool lengths_are_tokenized;
+        size_t max_token_ids;
+        size_t token_ids;
+        rust::Box<Tokenizer> * tokenizer;
     #endif
-    bool cut_input;
-    bool cut_output;
+        bool cut;
+        std::string data;
+
+        void clear()
+        {
+            data.clear();
+            #ifdef TOKENIZE
+            token_ids = 0;
+            #endif
+        }
+
+        void to_append_to(length_tracked_value & other)
+        {
+            if (other.max) {
+                max = other.max - other.data.size();
+            } else {
+                max = 0;
+            }
+            #ifdef TOKENIZE
+            tokenizer = other.tokenizer;
+            if (other.max_token_ids) {
+                max_token_ids = other.max_token_ids - other.token_ids;
+            } else{
+                max_token_ids = 0;
+            }
+            #endif
+            cut = other.cut;
+        }
+
+        bool set(void const * data, size_t length)
+        {
+            clear();
+            return append(data, length);
+        }
+
+        bool append(std::string const & more_data)
+        {
+            return append(data.data(), data.size());
+        }
+        bool append(void const * more_data, size_t more_length)
+        {
+            if (max) {
+                if (cut) {
+                    if (max == data.size()) {
+                        return false;
+                    }
+                } else if (data.size() + more_length > max) {
+                    return false;
+                }
+            }
+            #ifdef TOKENIZE
+            if (max_token_ids) {
+                size_t more_token_ids = token_length(more_data, more_length);
+                if (token_ids + more_token_ids > max_token_ids) {
+                    if (!cut) {
+                        return false;
+                    } else {
+                        throw std::logic_error("cut with tokenization length limit not implemented");
+                    }
+                }
+                token_ids += more_token_ids;
+            } else
+            #endif
+            if ((cut & max) && data.size() + more_length > max) {
+                more_length = max - data.size();
+            }
+            data.append((char const *)more_data, more_length);
+            return true;
+        }
+
+        bool can_append(size_t more_length)
+        {
+            if (max && data.size() == max) {
+                return false;
+            }
+            #ifdef TOKENIZE
+            if (max_token_ids && token_ids == max_token_ids) {
+                return false;
+            }
+            #endif
+            if (cut) {
+                return true;
+            }
+            if (max && data.size() + more_length > max) {
+                return false;
+            }
+            #ifdef TOKENIZE
+            if (max_token_ids && token_ids + more_length / 4 > max_token_ids) {
+                return false;
+            }
+            #endif
+            return true;
+        }
+
+        #ifdef TOKENIZE
+        size_t token_length(void const * data, size_t length)
+        {
+            static thread_local rust::Box<Encoding> tokenization = rust::Box<Encoding>::from_raw(nullptr);
+            tokenization = (*tokenizer)->encode(rust::cxxbridge1::String((char const *)data, length), false);
+            return tokenization->get_ids().size();
+        }
+        #endif
+    };
+
+    std::default_random_engine rng;
+    #ifdef TOKENIZE
+    rust::Box<Tokenizer> tokenizer;
+    #endif
+    length_tracked_value input, more_input, output;
     std::string tokenizer_path;
     std::string input_start;
     std::string message_start;
@@ -464,9 +498,6 @@ try_more:
     std::unordered_set<size_t> output_diff_idcs;
     std::unordered_map<cppgit2::oid, std::string, oid_hash> outputs;
     cppgit2::blob content;
-    std::string more_input;
-    std::string input, output;
-    size_t more_input_size, input_size;
 };
 
 int main(int argc, char **argv)
@@ -479,10 +510,10 @@ int main(int argc, char **argv)
     unsigned int cycles_over_repos = 16; //2;//~0;
     #ifdef TOKENIZE
     bool lengths_are_tokenized = false;
+    string tokenizer_path = "tokenizer.json";
     #endif
     bool cut_input = false;
     bool cut_output = false;
-    string tokenizer_path = "tokenizer.json";
     string input_start = "";
     string message_start = "";
     string message_end = "";
@@ -514,7 +545,9 @@ int main(int argc, char **argv)
         #endif
         cut_input,
         cut_output,
+        #ifdef TOKENIZE
         tokenizer_path,
+        #endif
         input_start,
         message_start,
         message_end,
@@ -588,214 +621,8 @@ int main(int argc, char **argv)
                 if (outputter.process(max_diffs_per_commit)) {
                     commits_output ++;
                 }
-#if 0
                 // OPTIMIZE: this selection of inputs can be done by randomizing a range of integers and picking by integers
-                // no need to enumerate them all in the next block
-    
-                #ifdef TOKENIZE
-                static thread_local rust::Box<Tokenizer> tokenizer = from_file(tokenizer_path);
-                static thread_local rust::Box<Encoding> tokenization = rust::Box<Encoding>::from_raw(nullptr);
-                #endif
-    
-                    // use of pointer here will be referencing temporaries.
-                    // can likely use an oid pair ... or something
-                static thread_local unordered_map<pair<oid,oid>, string, oid_pair_hash> inputs;
-                //static thread_local unordered_map<pair<oid,oid>, vector<uint32_t>, oid_pair_hash> input_ids;
-                static thread_local vector<pair<oid,oid>> input_index;
-                input_index.clear();
-                inputs.clear();
-
-                cerr << "looping over diff: " << commit.id().to_hex_string() << endl;
-                // fetch missing objects?
-                while ("checking all objects are present") {
-                    try {
-                        diff.for_each([&](const cppgit2::diff::delta & need_eeg_and_blockchain, float progress) {
-                            cppgit2::diff::delta::file files[2] = {need_eeg_and_blockchain.old_file(), need_eeg_and_blockchain.new_file()};
-                            for (auto & file : files) {
-                                cppgit2::oid id = file.id();
-                                // process objects that are blobs with nonzero ids. object type is stored in file mode.
-                                if ((file.mode() & 0777000) == (GIT_FILEMODE_BLOB & 0777000) && !id.is_zero()) {
-                                    try {
-                                        repository.lookup_blob(id);
-                                    } catch (cppgit2::git_exception &exc) {
-                                        repo_entry.missing(id, commit.id());
-                                    }
-                                }
-                            }
-                        });
-                    } catch (cppgit2::git_exception &exc) {
-                        repo_entry.missing(exc, commit.id());
-                    }
-                    if (repo_entry.fetch_missing()) {
-                        continue;
-                    } else{
-                        break;
-                    }
-                }
-                diff.for_each([&](const cppgit2::diff::delta & need_eeg_and_blockchain, float progress) // pain shown
-                { // input files
-                    auto old_file = need_eeg_and_blockchain.old_file();
-                    auto old_id = old_file.id();
-                    if ((old_file.mode() & 0777000) == (GIT_FILEMODE_BLOB & 0777000) && !old_id.is_zero()) {
-                                    //cerr << "looking up content: " << need_eeg_and_blockchain.old_file().id().to_hex_string() << endl;
-                        blob content = repository.lookup_blob(old_id);
-                        if (!content.is_binary()) {
-                            auto ident = make_pair<oid,oid>(
-                                need_eeg_and_blockchain.old_file().id(),
-                                need_eeg_and_blockchain.new_file().id()
-                            ); // .path()
-                            if (!inputs.count(ident)) {
-                                string & input = inputs[ident];
-                                input += file_name_start + need_eeg_and_blockchain.old_file().path() + file_name_end + file_content_start;
-                                input += string((char*)content.raw_contents(), content.raw_size());
-                                input += file_content_end;
-                            }
-                            input_index.push_back(ident);
-                        }
-                    }
-                });
-
-                //cout <<  "input count: " << inputs.size() << endl;
-    
-                static thread_local unordered_map<pair<oid,oid>, string, oid_pair_hash> outputs;
-                static thread_local vector<pair<oid,oid>> diff_oids;
-                diff_oids.clear();
-                outputs.clear();
-                diff.print(cppgit2::diff::format::patch, [&](
-                    const cppgit2::diff::delta & need_eeg_and_blockchain,
-                    const cppgit2::diff::hunk & hunk,
-                    const cppgit2::diff::line & line)
-                {
-                    auto ident = make_pair<oid,oid>(
-                        need_eeg_and_blockchain.old_file().id(),
-                        need_eeg_and_blockchain.new_file().id()
-                    ); // .path()
-    
-                    if (!diff_oids.size()) {
-                        diff_oids.push_back(ident);
-                    } else if (diff_oids.back() != ident) {
-                        diff_oids.push_back(ident);
-                    }
-                    string & patch = outputs[ident];
-                    char origin = line.origin();
-                    switch (origin) {
-                    case '-': case '+': case ' ':
-                        patch += line.origin();
-                    default:;
-                    }
-                    patch.append(line.content(), line.content_length());
-                });
-
-                //cout <<  "output count: " << outputs.size() << endl;
-    
-                // we now have output data, indexed by diff_oids
-                size_t total = diff.size() - diff.size(cppgit2::diff::delta::type::unmodified);
-                shuffle(diff_oids.begin(), diff_oids.end(), rng);
-                int diffs_output = 0;
-
-                // new organisation
-                static thread_local vector<size_t> diff_idcs, diff_subidcs;
-                diff_idcs.resize(diff.size());
-                for (size_t i = 0; i < diff.size; ++i ) {
-                        diff_idcs[i] = i;
-                }
-                diff_subidcs = diff_idcs;
-iterate:
-                // shuffling rather than picking randomly repeatedly lets us download all the missing objects after a loop
-                shuffle(diff_idcs.begin(), diff_idcs.end(), rng);
-                static thread_local std::unordered_set<int> output_diff_idcs;
-                for (int diff_idx = 0; diffs_output < max_diffs_per_commit && diff_idx < diff_idcs.size(); ++ diff_idx) {
-                    const cppgit2::diff::delta & need_eeg_and_blockchain = diff[diff_idcs[diff_idx]];
-                    auto old_file = need_eeg_and_blockchain.old_file();
-                    auto old_id = old_file.id();
-                    size_t input_size = 0;
-
-                    if (
-                        (old_file.mode() & 0777000) != (GIT_FILEMODE_BLOB & 0777000) ||
-                        old_id.is_zero() ||
-                        old_file.flags() && cppgit2::diff::flag::binary
-#ifndef TOKENIZE
-                        || (!cut_input && old_file.size() > max_input_length)
-#endif
-                    ) {
-                        continue;
-                    }
-
-                    static thread_local blob content;
-                    try {
-                        content = repository.lookup_blob(old_id);
-                    } catch (cppgit2::git_exception &exc) {
-                        repo_entry.missing(exc, commit.id());
-                        continue;
-                    }
-
-                    static thread_local string input;
-                    input.clear();
-                    input_size = 0;
-                    output_diff_idcs.reset();
-                    input
-                        += file_name_start
-                        + need_eeg_and_blockchain.old_file.path()
-                        + file_name_end
-                        + file_content_start
-                        + string((char*)content.raw_contents(), content.raw_size())
-                        + file_content_end
-                    ;
-                        if (lengths_are_tokenized) {
-                            tokenization = tokenizer->encode(input, true);
-                            input_size = tokenization->get_ids().size();
-                        } else
-                        {
-                            input_size = input.size();
-                        }
-                    input_size += input.size();
-
-                    output_diff_idcs.insert(diff_idx);
-
-                    shuffle(diff_subidcs.begin(), diff_subidcs.end(), rng);
-                    for (int diff_subidx = 0; diff_subidx < diff_subidcs.size(); ++ diff_subidx) {
-                        if (output_diff_idcs.count(diff_subidcs[diff_subidx]) {
-                            continue;
-                        }
-                        const cppgit2::diff::delta & need_eeg_and_blockchain = diff[diff_idcs[diff_idx]];
-                        auto old_file = need_eeg_and_blockchain.old_file();
-                        auto old_id = old_file.id();
-                        if (
-                            (old_file.mode() & 0777000) != (GIT_FILEMODE_BLOB & 0777000) ||
-                            old_id.is_zero() ||
-                            old_file.flags() && cppgit2::diff::flag::binary
-#ifndef TOKENIZE
-                            || (!cut_input && input_size + old_file.size() > max_input_length)
-#endif
-                        ) {
-                            continue;
-                        }
-                        try {
-                            content = repository.lookup_blob(old_id);
-                        } catch (cppgit2::git_exception &exc) {
-                            repo_entry.missing(exc, commit.id());
-                            continue;
-                        }
-                        input
-                            += file_name_start
-                            + need_eeg_and_blockchain.old_file.path()
-                            + file_name_end
-                            + file_content_start
-                            + string((char*)content.raw_contents(), content.raw_size())
-                            + file_content_end
-                        ;
-                        input_size += input.size();
-                        output_diff_idcs.insert(diff_idx);
-                        // INPUT left off here
-                        //   // the above code happens twice 
-                    }
-
-
-                    
-                
-                    // OUTPUT
-                    string output = outputs[ident];
-
+                // no need to enumerate them all [is this still relevant?]
                 //    #ifdef TOKENIZE
                 //    if (lengths_are_tokenized) {
                 //        tokenization = tokenizer->encode(output, true);
@@ -810,137 +637,10 @@ iterate:
                 //    } else
                 //    #endif
                 //    {
-                    output_size = output.size();
-                //    }
-                }
-                if (repo_entry.fetch_missing()) {
-                    goto iterate;
-                }
-    
-                for(int diff_idx = 0; diffs_output < max_diffs_per_commit && diff_idx < total; ++ diff_idx) {
-                    auto ident = diff_oids[diff_idx];
-                    //cout <<  "selecting " << ident.first.to_hex_string() << endl;
-
-                    size_t output_size = 0, input_size = 0;
-                    
-                    string output = outputs[ident];
-                    #ifdef TOKENIZE
-                    if (lengths_are_tokenized) {
-                        tokenization = tokenizer->encode(output, true);
-                        output_size = tokenization->get_ids().size();
-                        if (output_size > max_output_length) {
-                            if (!cut_output) {
-                                continue;
-                            } else {
-                                // BUG: not cutting output due to tokenization funcs haven't implemented yet
-                            }
-                        }
-                    } else
-                    #endif
-                    {
-                        output_size = output.size();
-                    }
-    
-                    string input = 
-                        input_start + message_start + commit.message() + message_end;
-                    input += inputs[ident];
-                    
-                    #ifdef TOKENIZE
-                    if (lengths_are_tokenized) {
-                        tokenization = tokenizer->encode(input, true);
-                        input_size = tokenization->get_ids().size();
-                    } else
-                    #endif
-                    {
-                        input_size = input.size();
-                    }
-
-                    static thread_local vector<pair<oid,oid>> input_index_2;
-                    // first output context from other changed files
-                    input_index_2 = diff_oids;
-                    shuffle(input_index_2.begin(), input_index_2.end(), rng);
-                    //cout <<  "input_size=" << input_size << endl;
-                    //cout <<  "max_input_length=" << max_input_length << endl;
-                    //cout <<  "input_index_2.size()=" << input_index_2.size() << endl;
-                    while (input_size < max_input_length && !input_index_2.empty()) {
-                        pair<oid,oid> & ident2 = input_index_2.back();
-                        //cout <<  "considering " << ident.first.to_hex_string() << endl;
-                        if (ident2 != ident) {
-                            auto & more = inputs[ident2];
-                            size_t more_size;
-                            #ifdef TOKENIZE
-                            if (lengths_are_tokenized) {
-                                tokenization = tokenizer->encode(more, false);
-                                more_size = tokenization->get_ids().size();
-                            } else
-                            #endif
-                            {
-                                more_size = more.size();
-                            }
-                            if (cut_input || input_size + more_size <= max_input_length) {
-                                input += inputs[ident2];
-                                input_size += more_size;
-                            }
-                        }
-                        input_index_2.pop_back();
-                        //cout <<  "input_size=" << input_size << endl;
-                        //cout <<  "input_index_2.size()=" << input_index_2.size() << endl;
-                    }
-                    //cout <<  "input_size=" << input_size << endl;
-                    //cout <<  "max_input_length=" << max_input_length << endl;
-                    if (input_size < max_input_length) {
-                        // if room, add context from other files in the tree
-                        input_index_2 = input_index;
-                        shuffle(input_index_2.begin(), input_index_2.end(), rng);
-                        //cout <<  "input_size=" << input_size << endl;
-                        //cout <<  "max_input_length=" << max_input_length << endl;
-                        //cout <<  "input_index_2.size()=" << input_index_2.size() << endl;
-                        while (input_size < max_input_length && !input_index_2.empty()) {
-                            pair<oid,oid> & ident2 = input_index_2.back();
-                            if (!outputs.count(ident2)) {
-                                auto & more = inputs[ident2];
-                                size_t more_size;
-                                #ifdef TOKENIZE
-                                if (lengths_are_tokenized) {
-                                    tokenization = tokenizer->encode(more, false);
-                                    more_size = tokenization->get_ids().size();
-                                } else
-                                #endif
-                                {
-                                    more_size = more.size();
-                                }
-                                if (cut_input || input_size + more_size <= max_input_length) {
-                                    input += inputs[ident2];
-                                    input_size += more_size;
-                                }
-                            }
-                            input_index_2.pop_back();
-                        }
-                    }
                     // BUG: haven't implemented functions in tokenizer to find offset, so not cutting input
                     //if (input_size > max_input_length) {
                     //    input.resize(max_input_length);
                     //}
-    
-                    if (!input_size) {
-                        continue;
-                    }
-    
-                    static thread_local rapidjson::StringBuffer linebuf;
-                    static thread_local rapidjson::Writer<rapidjson::StringBuffer> lineout;
-                    linebuf.Clear();
-                    lineout.Reset(linebuf);
-                    lineout.StartObject();
-                    lineout.String("input", 5); lineout.String(input.data(), input.size());
-                    lineout.String("label", 5); lineout.String(output.data(), output.size());
-                    lineout.EndObject();
-                    puts(linebuf.GetString());
-                    ++ diffs_output;
-                }
-                if (diffs_output > 0) {
-                    ++ commits_output;
-                }
-#endif
             }
         }
     }
