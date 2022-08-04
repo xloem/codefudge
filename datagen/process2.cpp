@@ -339,7 +339,9 @@ try_more:
         }
 
         static thread_local std::string old_path = old_file.path();
-        if (!more_input.can_append(file_name_start.size() + old_path.size() + file_name_end.size() + file_content_start.size() + old_file.size() + file_content_end.size())) {
+        size_t extra_size = file_name_start.size() + old_path.size() + file_name_end.size() + file_content_start.size() + file_content_end.size();
+        size_t content_size = old_file.size();
+        if (!more_input.can_append(extra_size + content_size)) {
             return false;
         }
 
@@ -351,11 +353,18 @@ try_more:
             return false;
         }
 
+        if (content_size == 0) {
+            content_size = content.raw_size();
+            if (!more_input.can_append(extra_size + content_size)) {
+                return false;
+            }
+        }
+
         bool success = more_input.append(file_name_start);
         success &= more_input.append(old_path);
         success &= more_input.append(file_name_end);
         success &= more_input.append(file_content_start);
-        success &= more_input.append(content.raw_contents(), content.raw_size());
+        success &= more_input.append(content.raw_contents(), content_size);
         success &= more_input.append(file_content_end);
         if (!success) {
             throw std::logic_error("actual append failed after can_append succeeded; missing way to revert state to before partial append; maybe length_tracked_value could push/pop its state leaving more_input unneeded");
@@ -408,7 +417,7 @@ try_more:
 
         bool append(std::string const & more_data)
         {
-            return append(data.data(), data.size());
+            return append(more_data.data(), more_data.size());
         }
         bool append(void const * more_data, size_t more_length)
         {
