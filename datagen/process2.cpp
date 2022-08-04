@@ -85,7 +85,7 @@ struct repo_commits
         ) {
             auto branch = *remote_branch_iter;
             auto branch_tip = branch.resolve().target();
-            if (repository.is_descendant_of(branch_tip, commit)) {
+            if (branch_tip == commit || repository.is_descendant_of(branch_tip, commit)) {
                 return branch.name();
             }
         }
@@ -101,6 +101,7 @@ struct repo_commits
         }
         std::string remote_name = repository.branch_remote_name(remote_branch_name);
         cerr << missing_object.to_hex_string() << " is missing; " << remote_branch_name << " should contain it from " << commit.to_hex_string() << endl;
+        missing_objects_by_remote_name[remote_name].insert(missing_object);
     }
 
     void missing(std::string const & missing_object, cppgit2::oid const & commit)
