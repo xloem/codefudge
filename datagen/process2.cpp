@@ -197,6 +197,8 @@ struct output_manager
       file_content_end(file_content_end),
       input_end(input_end)
     {
+        input.max = max_input_length;
+        output.max = max_output_length;
         #ifdef TOKENIZE
         if (lengths_are_tokenized) {
             input.max_token_ids = max_input_length;
@@ -205,14 +207,11 @@ struct output_manager
             output.max_token_ids = max_output_length;
             output.max = max_output_length * 4;
             output.tokenizer = &tokenizer;
-        } else
-        #endif
-        {
+        } else {
             input.max_token_ids = 0;
-            input.max = max_input_length;
             output.max_token_ids = 0;
-            output.max = max_output_length;
         }
+        #endif
         input.cut = cut_input;
         output.cut = cut_output;
         diff_options.set_flags(diff_flags);
