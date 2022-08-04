@@ -130,14 +130,14 @@ struct repo_commits
             cerr << "Downloading";
             auto & remote_name = remote_name_and_missing_objects.first;
             auto & missing_objects = remote_name_and_missing_objects.second;
-            string cmd = "cd '" + repository.path() + "';{ ";
+            string cmd = "{ ";
             for (auto & missing_object : missing_objects) {
                 string id = missing_object.to_hex_string();
                 cerr << " " << id;
                 cmd += "echo " + id + "; ";
             }
             cerr << " ..." << endl;
-            cmd += "} | git -c remote.'" + remote_name + "'.promisor=true cat-file --batch-check 1>&2";
+            cmd += "} | git -C '" + repository.path() + "' -c remote.'" + remote_name + "'.promisor=true cat-file --batch-check 1>&2";
             cerr << cmd << endl;
             //string cmd = "cd '" + repository.path() + "';git cat-file blob " + oid + ">/dev/null";
             //cerr << cmd << endl;
@@ -312,7 +312,7 @@ try_more:
             const cppgit2::diff::delta & need_eeg_and_blockchain = (*diff)[idx];
             
             more_input.clear();
-            if (!add_input(need_eeg_and_blockchain)) {
+            if (!add_input(need_eeg_and_blockchain, true)) {
                 skip_input_diff_idcs.insert(idx);
                 continue;
             }
@@ -329,7 +329,7 @@ try_more:
                     continue;
                 }
                 const cppgit2::diff::delta & need_eeg_and_blockchain = (*diff)[idx];
-                add_input(need_eeg_and_blockchain);
+                add_input(need_eeg_and_blockchain, false);
             }
 
             static thread_local rapidjson::StringBuffer linebuf;
@@ -381,20 +381,26 @@ try_more:
         return output.append(patch_c_struct->ptr, patch_c_struct->size);
     }
 
-    bool add_input(const cppgit2::diff::delta & need_eeg_and_blockchain)
+    bool add_input(const cppgit2::diff::delta & need_eeg_and_blockchain, bool allow_empty)
     {
         auto old_file = need_eeg_and_blockchain.old_file();
         auto old_id = old_file.id();
 
-        if (
-            (old_file.mode() & 0777000) != (GIT_FILEMODE_BLOB & 0777000) ||
-            old_id.is_zero() ||
-            old_file.flags() & (uint32_t)cppgit2::diff::delta::flag::binary
-        ) {
-            return false;
+        if (old_id.is_zero()) {
+            if (!allow_empty) {
+                return false;
+            }
+        } else {
+            if (
+                (old_file.mode() & 0777000) != (GIT_FILEMODE_BLOB & 0777000) ||
+                old_file.flags() & (uint32_t)cppgit2::diff::delta::flag::binary
+            ) {
+                return false;
+            }
         }
 
-        static thread_local std::string old_path = old_file.path();
+        static thread_local std::string old_path;
+        old_path = old_file.path();
         size_t extra_size = file_name_start.size() + old_path.size() + file_name_end.size() + file_content_start.size() + file_content_end.size();
         size_t content_size = old_file.size();
         if (!more_input.can_append(extra_size + content_size)) {
@@ -402,17 +408,19 @@ try_more:
         }
 
         blob content;
-        try {
-            content = repo_entry->repository.lookup_blob(old_id);
-        } catch (cppgit2::git_exception &exc) {
-            repo_entry->missing(exc, commit->id());
-            return false;
-        }
-
-        if (content_size == 0) {
-            content_size = content.raw_size();
-            if (!more_input.can_append(extra_size + content_size)) {
+        if (!old_id.is_zero()) {
+            try {
+                content = repo_entry->repository.lookup_blob(old_id);
+            } catch (cppgit2::git_exception &exc) {
+                repo_entry->missing(exc, commit->id());
                 return false;
+            }
+
+            if (content_size == 0) {
+                content_size = content.raw_size();
+                if (!more_input.can_append(extra_size + content_size)) {
+                    return false;
+                }
             }
         }
 
@@ -420,7 +428,9 @@ try_more:
         success &= more_input.append(old_path);
         success &= more_input.append(file_name_end);
         success &= more_input.append(file_content_start);
-        success &= more_input.append(content.raw_contents(), content_size);
+        if (!old_id.is_zero()) {
+            success &= more_input.append(content.raw_contents(), content_size);
+        }
         success &= more_input.append(file_content_end);
         if (!success) {
             throw std::logic_error("actual append failed after can_append succeeded; missing way to revert state to before partial append; maybe length_tracked_value could push/pop its state leaving more_input unneeded");
