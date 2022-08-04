@@ -56,12 +56,15 @@ struct oid_pair_hash
 
 struct repo_commits
 {
+    std::string path;
     cppgit2::repository repository;
     std::vector<cppgit2::oid> commits;
     std::unordered_map<std::string, std::unordered_set<cppgit2::oid, oid_hash>> missing_objects_by_remote_name;
 
+
     repo_commits(char const * path)
-    : repository(cppgit2::repository::open(path))
+    : path(path),
+      repository(cppgit2::repository::open(path))
     {
         std::cerr << "Loading commits for " << path << std::endl;
         //static cppgit2::revwalk revwalk;
@@ -73,23 +76,31 @@ struct repo_commits
         }
     }
 
-    void missing(cppgit2::oid const & missing_object, cppgit2::oid const & commit)
+    std::string remote_branch_name(cppgit2::oid const & commit)
     {
-        bool found = false;
-        repository.for_each_branch([&](cppgit2::reference branch)
-        {
+        for (
+            remote_branch_iter.init(repository, cppgit2::branch::branch_type::remote);
+            remote_branch_iter;
+            ++ remote_branch_iter
+        ) {
+            auto branch = *remote_branch_iter;
             auto branch_tip = branch.resolve().target();
             if (repository.is_descendant_of(branch_tip, commit)) {
-                // the remote containing branch should have the missing object
-                std::string remote_name = repository.branch_remote_name(branch.name());
-                cerr << missing_object.to_hex_string() << " is missing; " << branch.name() << " should contain it from " << commit.to_hex_string() << endl;
-                missing_objects_by_remote_name[remote_name].insert(missing_object);
-                found = true;
+                return branch.name();
             }
-        }, cppgit2::branch::branch_type::remote);
-        if (!found) {
-            throw std::string("no remote had " + missing_object.to_hex_string());
         }
+        return {};
+    }
+
+    void missing(cppgit2::oid const & missing_object, cppgit2::oid const & commit)
+    {
+        // the remote containing branch should have the missing object
+        std::string remote_branch_name = this->remote_branch_name(commit);
+        if (remote_branch_name.empty()) {
+            throw std::invalid_argument("no remote had " + missing_object.to_hex_string());
+        }
+        std::string remote_name = repository.branch_remote_name(remote_branch_name);
+        cerr << missing_object.to_hex_string() << " is missing; " << remote_branch_name << " should contain it from " << commit.to_hex_string() << endl;
     }
 
     void missing(std::string const & missing_object, cppgit2::oid const & commit)
@@ -131,7 +142,7 @@ struct repo_commits
             //string cmd = "cd '" + repository.path() + "';git cat-file blob " + oid + ">/dev/null";
             //cerr << cmd << endl;
             if (system(cmd.c_str())) {
-                throw std::string("batch git cat-file subprocess failed\n" + cmd);
+                throw std::runtime_error("batch git cat-file subprocess failed\n" + cmd);
             }
             missing_objects.clear();
         }
@@ -157,6 +168,46 @@ struct repo_commits
                         }, cppgit2::branch::branch_type::remote);
                         */
     }
+
+    struct branch_iterator {
+        branch_iterator()
+        : c_ptr(0), c_ref(0)
+        { }
+        void init(cppgit2::repository & repo, cppgit2::branch::branch_type type)
+        {
+            c_type = static_cast<git_branch_t>(type);
+            git_branch_iterator_new(&c_ptr, const_cast<git_repository*>(repo.c_ptr()), c_type);
+            ++(*this);
+        }
+        cppgit2::reference operator*()
+        {
+            return {c_ref};
+        }
+        void operator++()
+        {
+            if (git_branch_next(&c_ref, &c_type, c_ptr) != 0) {
+                c_ref = 0;
+            }
+        }
+        operator bool() {
+            return c_ref;
+        }
+        void free()
+        {
+            if (c_ptr) {
+                git_branch_iterator_free(c_ptr);
+                c_ptr = 0;
+                c_ref = 0;
+            }
+        }
+        ~branch_iterator()
+        {
+            free();
+        }
+        git_branch_iterator *c_ptr;
+        git_reference *c_ref;
+        git_branch_t c_type;
+    } remote_branch_iter;
 };
 
 struct output_manager
@@ -230,14 +281,14 @@ struct output_manager
         diff_subidcs = diff_idcs;
         std::shuffle(diff_idcs.begin(), diff_idcs.end(), rng);
 
-        output_diff_idcs.clear();
+        skip_input_diff_idcs.clear();
     }
 
     size_t process(size_t max_diffs_per_commit)
     {
         size_t output_size = 0;
         size_t diffs_output = 0;
-        output_diff_idcs.clear();
+        skip_input_diff_idcs.clear();
         std::string commit_msg = commit->message();
         cerr << "looping over diff: " << commit->id().to_hex_string() << endl;
         if (!input.set(input_start.data(), input_start.size())) {
@@ -259,30 +310,27 @@ try_more:
         {
             size_t idx = diff_idcs[diff_idx];
             const cppgit2::diff::delta & need_eeg_and_blockchain = (*diff)[idx];
-
-            if (!get_output(idx)) {
-                continue;
-            }
-
-            output_diff_idcs.insert(idx);
             
             more_input.clear();
             if (!add_input(need_eeg_and_blockchain)) {
+                skip_input_diff_idcs.insert(idx);
+                continue;
+            }
+
+            if (!get_output(idx)) {
                 continue;
             }
 
             std::shuffle(diff_subidcs.begin(), diff_subidcs.end(), rng);
             for (size_t diff_subidx = 0; input.can_append(file_name_start.size() + file_name_end.size() + file_content_start.size() + file_content_end.size() + 16) && diff_subidx < diff_subidcs.size(); ++ diff_subidx)
             {
-                size_t idx = diff_subidcs[diff_subidx];
-                if (output_diff_idcs.count(idx)) {
+                size_t subidx = diff_subidcs[diff_subidx];
+                if (idx == subidx || skip_input_diff_idcs.count(subidx)) {
                     continue;
                 }
                 const cppgit2::diff::delta & need_eeg_and_blockchain = (*diff)[idx];
                 add_input(need_eeg_and_blockchain);
             }
-
-            output_diff_idcs.erase(idx);
 
             static thread_local rapidjson::StringBuffer linebuf;
             static thread_local rapidjson::Writer<rapidjson::StringBuffer> lineout;
@@ -292,6 +340,14 @@ try_more:
             more_input.data = input.data + more_input.data;
             lineout.String("input", 5); lineout.String(more_input.data.data(), more_input.data.size());
             lineout.String("label", 5); lineout.String(output.data.data(), output.data.size());
+            auto commit_id = commit->id();
+            auto remote_branch_name = repo_entry->remote_branch_name(commit_id);
+            if (!remote_branch_name.empty()) {
+                lineout.String("branch", 6); lineout.String(remote_branch_name.data(), remote_branch_name.size());
+            }
+            auto commit_string = commit_id.to_hex_string();
+            lineout.String("commit", 6); lineout.String(commit_string.data(), commit_string.size());
+            lineout.String("repo", 4); lineout.String(repo_entry->path.data(), repo_entry->path.size());
             lineout.EndObject();
             puts(linebuf.GetString());
             ++ diffs_output;
@@ -503,7 +559,7 @@ try_more:
     cppgit2::commit const * commit;
     cppgit2::diff const * diff;
     std::vector<size_t> diff_idcs, diff_subidcs;
-    std::unordered_set<size_t> output_diff_idcs;
+    std::unordered_set<size_t> skip_input_diff_idcs;
     std::unordered_map<cppgit2::oid, std::string, oid_hash> outputs;
     cppgit2::blob content;
 };
@@ -513,8 +569,8 @@ int main(int argc, char **argv)
     unsigned int max_diffs_per_commit = 1;
     unsigned int max_commits_per_repo = 1;
     unsigned int seed = 0;
-    unsigned int max_input_length = 256; //~0;
-    unsigned int max_output_length = 256; //~0; //1024;
+    unsigned int max_input_length = ~0; //256; //~0;
+    unsigned int max_output_length = ~0; //256; //~0; //1024;
     unsigned int cycles_over_repos = 16; //2;//~0;
     #ifdef TOKENIZE
     bool lengths_are_tokenized = false;
@@ -617,7 +673,7 @@ int main(int argc, char **argv)
                     diff = repository.create_diff_index_to_index(possible_conflicts, merges, diff_options);
                     break;
                 default:
-                    throw "multimerge";
+                    throw std::logic_error("unimplemented: multimerge");
                 }
     
                 diff.find_similar(); // finds renames, copies. can have options passed.
