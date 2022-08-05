@@ -64,16 +64,18 @@ try:
 except:
     cache = {}
 updated_cache = False
+session = requests.Session()
 for url, commit in zip(urls, blobs.values()):
     if url not in cache and '://' in url:
         try:
-            cache[url] = requests.get(url + '/' + SUBURL).json()
+            cache[url] = session.get(url + '/' + SUBURL).json()
             cache[url]['commit'] = commit.hexsha
             with open('hyperparm_cache.json.new', 'wt') as file:
                 json.dump(cache, file)
             os.rename('hyperparm_cache.json.new', 'hyperparm_cache.json')
         except:
             print(f'failed: {url}/{SUBURL}')
+            raise
 
 print(f'cache has {len(cache)} entries')
 
