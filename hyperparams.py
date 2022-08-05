@@ -7,9 +7,9 @@ PATH='w3put.log'
 SUBURL='fudge-long-t5-tglobal-base/trainer_state.json'
 
 def tree_lookup(tree, name):
-    for tree in tree.trees:
-        if tree.name == name:
-            return tree
+    for subtree in tree.trees:
+        if subtree.name == name:
+            return subtree
     for blob in tree.blobs:
         if blob.name == name:
             return blob
@@ -20,7 +20,7 @@ def commit_lookup_path(commit, name):
         item = tree_lookup(item, part)
     return item
 
-unvisited_commits = set([repo.head.commit])
+unvisited_commits = [repo.head.commit]
 #visited_commits = {}
 visited_commits = set()
 blobs = {}
@@ -39,15 +39,15 @@ while len(unvisited_commits):
         continue
     time = commit.authored_date
     blob = commit_lookup_path(commit,PATH)
-    unvisited_commits.update(commit.parents)
+    unvisited_commits.extend(commit.parents)
     visited_commits.add(commit)
     if blob is not None:
-        if blob.hexsha in blobs:
+        if blob in blobs:
             #import pdb; pdb.set_trace()
-            if commit.authored_date < blobs[blob.hexsha][1].authored_date:
-                blobs[blob.hexsha] = (blob, commit)
+            if commit.authored_date < blobs[blob][1].authored_date:
+                blobs[blob] = (blob, commit)
         else:
-            blobs[blob.hexsha] = (blob, commit)
+            blobs[blob] = (blob, commit)
     
 print(f'found {len(visited_commits)} commits, {len(blobs)} blobs')
 
@@ -57,7 +57,7 @@ def blob2url(blob):
     url = content.split(' ')[-1].replace('dweb.link', GATEWAY)
     return url
 
-urls = [blob2url(blob) for blob, commit in blobs.values()]
+urls = [blob2url(blob) for blob in blobs]
 
 try:
     with open('hyperparm_cache.json') as file:
