@@ -82,3 +82,37 @@ for url, commit in zip(urls, blobs.values()):
         state = cache[url]
     except:
         continue
+#example cache content:
+# {
+#     "https://gateway.pinata.cloud/ipfs/bafybeigr7wwnxzkxd4sg542fhhwxo4vqvo5wwsj2q4w6tfvbp2rckurc3y": {
+#         "best_metric": null,
+#         "best_model_checkpoint": null,
+#         "epoch": 0.9668374746205163,
+#         "global_step": 25000,
+#         "is_hyper_param_search": false,
+#         "is_local_process_zero": true,
+#         "is_world_process_zero": true,
+#         "log_history": [
+#             {
+#                 "epoch": 0.02,
+#                 "learning_rate": 4.9033143829523916e-05,
+#                 "loss": 2.1322,
+#                 "step": 500
+#             },
+# ...
+#             {
+#                 "epoch": 0.97,
+#                 "learning_rate": 1.6571914761960013e-06,
+#                 "loss": 1.9421,
+#                 "step": 25000
+#             }
+#         ],
+#         "max_steps": 25857,
+#         "num_train_epochs": 1,
+#         "total_flos": 6.566108607989683e+16,
+#         "trial_name": null,
+#         "trial_params": null,
+#         "commit": "59e5738ea14cf2a7e3c20ad86cb3174658118c68"
+#     },
+# ...
+# }
