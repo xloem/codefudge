@@ -73,9 +73,8 @@ for url, commit in zip(urls, blobs.values()):
             with open('hyperparm_cache.json.new', 'wt') as file:
                 json.dump(cache, file)
             os.rename('hyperparm_cache.json.new', 'hyperparm_cache.json')
-        except:
+        except json.decoder.JSONDecodeError:
             print(f'failed: {url}/{SUBURL}')
-            raise
 
 print(f'cache has {len(cache)} entries')
 
