@@ -42,11 +42,12 @@ while len(unvisited_commits):
     unvisited_commits.update(commit.parents)
     visited_commits.add(commit)
     if blob is not None:
-        if blob in blobs:
-            if commit.authored_date < blobs[blob].authored_date:
-                blobs[blob] = commit    
+        if blob.hexsha in blobs:
+            #import pdb; pdb.set_trace()
+            if commit.authored_date < blobs[blob.hexsha][1].authored_date:
+                blobs[blob.hexsha] = (blob, commit)
         else:
-            blobs[blob] = commit    
+            blobs[blob.hexsha] = (blob, commit)
     
 print(f'found {len(visited_commits)} commits, {len(blobs)} blobs')
 
@@ -56,7 +57,7 @@ def blob2url(blob):
     url = content.split(' ')[-1].replace('dweb.link', GATEWAY)
     return url
 
-urls = [blob2url(blob) for blob in blobs]
+urls = [blob2url(blob) for blob, commit in blobs.values()]
 
 try:
     with open('hyperparm_cache.json') as file:
@@ -65,7 +66,7 @@ except:
     cache = {}
 updated_cache = False
 session = requests.Session()
-for url, commit in zip(urls, blobs.values()):
+for url, (blob, commit) in zip(urls, blobs.values()):
     if url not in cache and '://' in url:
         try:
             cache[url] = session.get(url + '/' + SUBURL).json()
