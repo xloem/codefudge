@@ -76,6 +76,9 @@ for url, (blob, commit) in zip(urls, blobs.values()):
             os.rename('hyperparm_cache.json.new', 'hyperparm_cache.json')
         except json.decoder.JSONDecodeError:
             print(f'failed: {url}/{SUBURL}')
+        except requests.exceptions.ConnectionError:
+            print(f'could not connect to {GATEWAY}')
+            break
 
 print(f'cache has {len(cache)} entries')
 
