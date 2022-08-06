@@ -9,7 +9,7 @@ GRAD_ACCUM=2
 # 16 GB VRAM
 BATCH_SIZE=1
 #MAX_OUT_LEN=2168 # without training embeddings, this worked for me for a few thousand steps
-MAX_OUT_LEN=2160 # with training embeddings; 2164 failed after 5434
+MAX_OUT_LEN=2158 # with training embeddings; 2164 failed after 5434
 # 8 GB VRAM
 #MAX_OUT_LEN=1152
 # 2 GB VRAM
@@ -34,7 +34,7 @@ then
 	DATAFILE="$REAL_DATAFILE"
 
 	echo continuing grooming of adapter ... machine learning models suffer much less than human beings when groomed for behaviors.
-	TRANSFORMERS_OFFLINE=1 python3 example_run_summarization_plus_embeddings.py --learning_rate 2.5e-05 --tokenizer_name "$OUTPUT_DIR" --load_adapter "$OUTPUT_DIR"/summarization --gradient_accumulation_steps "$GRAD_ACCUM" --model_name_or_path "$MODEL" --do_train --output_dir "$OUTPUT_DIR" --per_device_train_batch_size="$BATCH_SIZE" --overwrite_output_dir --predict_with_generate --train_file "$DATAFILE" --train_adapter True --num_train_epochs "$EPOCHS" --max_target_length "$MAX_OUT_LEN"
+	TRANSFORMERS_OFFLINE=1 python3 example_run_summarization_plus_embeddings.py --learning_rate 1.5e-05 --tokenizer_name "$OUTPUT_DIR" --load_adapter "$OUTPUT_DIR"/summarization --gradient_accumulation_steps "$GRAD_ACCUM" --model_name_or_path "$MODEL" --do_train --output_dir "$OUTPUT_DIR" --per_device_train_batch_size="$BATCH_SIZE" --overwrite_output_dir --predict_with_generate --train_file "$DATAFILE" --train_adapter True --num_train_epochs "$EPOCHS" --max_target_length "$MAX_OUT_LEN"
 else
 	if ! [ -e "$OUTPUT_DIR"/tokenizer ]
 	then
