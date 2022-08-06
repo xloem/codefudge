@@ -9,7 +9,7 @@ GRAD_ACCUM=2
 # 16 GB VRAM
 BATCH_SIZE=1
 #MAX_OUT_LEN=2168 # without training embeddings, this worked for me for a few thousand steps
-MAX_OUT_LEN=2160 # with training embeddings; 2164 failed after 5434
+MAX_OUT_LEN=2158 # with training embeddings; 2164 failed after 5434
 # 8 GB VRAM
 #MAX_OUT_LEN=1152
 # 2 GB VRAM
