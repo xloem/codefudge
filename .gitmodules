@@ -4,3 +4,6 @@
 [submodule "datagen/rapidjson"]
 	path = datagen/rapidjson
 	url = https://github.com/Tencent/rapidjson/
+[submodule "datagen/progressbar"]
+	path = datagen/progressbar
+	url = https://github.com/gipert/progressbar

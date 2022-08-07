@@ -16,6 +16,8 @@ using namespace cppgit2;
 #include <rapidjson/writer.h>
 #include <rapidjson/stringbuffer.h>
 
+#include "progressbar/include/progressbar.hpp"
+
 #ifdef TOKENIZE
 #include "tinytokenizers.rs.h"
 #endif
@@ -59,6 +61,7 @@ struct repo_commits
     std::string path;
     cppgit2::repository repository;
     std::vector<cppgit2::oid> commits;
+    std::vector<std::pair<cppgit2::remote, cppgit2::refspec>> remote_fetchspecs;
     std::unordered_map<std::string, std::unordered_set<cppgit2::oid, oid_hash>> missing_objects_by_remote_name;
 
 
@@ -78,6 +81,20 @@ struct repo_commits
 
     std::string remote_name(cppgit2::oid const & commit)
     {
+        std::cerr << "Looking for remote for " << commit.to_hex_string() << " ..." << std::endl;
+        for (
+            remote_branch_iter.init(repository, cppgit2::branch::branch_type::remote);
+            remote_branch_iter;
+            ++ remote_branch_iter
+        ) {
+            auto branch = *remote_branch_iter;
+            auto branch_tip = branch.resolve().target();
+            if (branch_tip == commit || repository.is_descendant_of(branch_tip, commit)) {
+                std::cerr << "Found remote branch " << branch.name() << " containing " << commit.to_hex_string() << std::endl;
+                return branch_remote_name(branch.name());
+            }
+        }
+        std::cerr << "Had some trouble finding which remote " << commit.to_hex_string() << " came from ..." << std::endl;
         static thread_local std::vector<cppgit2::oid> non_remote_references;
         non_remote_references.clear();
         for (
@@ -86,18 +103,14 @@ struct repo_commits
             ++ reference_iter
         ) {
             auto branch = *reference_iter;
+            if (branch.is_remote()) {
+                continue;
+            }
             auto branch_tip = branch.resolve().target();
             if (branch_tip == commit || repository.is_descendant_of(branch_tip, commit)) {
-                static thread_local std::string branch_name;
-                branch_name = branch.name();
-                try {
-                    return repository.branch_remote_name(branch_name);
-                } catch (cppgit2::git_exception &) {
-                    non_remote_references.push_back(branch_tip);
-                }
+                non_remote_references.push_back(branch_tip);
             }
         }
-        std::cerr << "Had some trouble finding which remote " << commit.to_hex_string() << " came from ..." << endl;
         // not found on any remote branches; it may be a remote tag the branch of which was rebased away. so, look for a shallow merge base.
         std::string best_branch;
         cppgit2::oid best_base;
@@ -118,7 +131,33 @@ struct repo_commits
         }
         // an exception here would imply failure in finding a missing object in remotes
         std::cerr << "Looks like " << commit.to_hex_string() << " is nearest to " << best_branch << endl;
-        return repository.branch_remote_name(best_branch);
+        return branch_remote_name(best_branch);
+    }
+
+    std::string branch_remote_name(std::string const & branch_name)
+    {
+	if (remote_fetchspecs.empty()) {
+            std::cerr << "Loading remotes for " << path << std::endl;
+            auto remote_names = repository.remote_list();
+            progressbar bar(remote_names.count());
+            for (auto const & remote_name : remote_names) {
+                cppgit2::remote remote = repository.lookup_remote(remote_name);
+                for (auto const & fetch_refspec : remote.fetch_refspec()) {
+                    cppgit2::refspec fetchspec = cppgit2::refspec::parse(fetch_refspec, true);
+                    remote_fetchspecs.emplace_back(std::move(remote), std::move(fetchspec));
+                }
+                bar.update();
+            }
+        }
+        for (auto & remote_fetchspec : remote_fetchspecs) {
+            auto & remote = remote_fetchspec.first;
+            auto & fetchspec = remote_fetchspec.second;
+            if (fetchspec.destination_matches_reference(branch_name)) {
+                std::cerr << "Mapped remote branch " << branch_name << " to remote " << remote.name() << std::endl;
+                return remote.name();
+            }
+        }
+        throw std::logic_error(branch_name + " is a remote branch but no remote fetchspecs matched");
     }
 
     void missing(cppgit2::oid const & missing_object, cppgit2::oid const & commit)
@@ -409,10 +448,10 @@ try_more:
             lineout.String("input", 5); lineout.String(more_input.data.data(), more_input.data.size());
             lineout.String("label", 5); lineout.String(output.data.data(), output.data.size());
             auto commit_id = commit->id();
-            auto remote_name = repo_entry->remote_name(commit_id);
-            if (!remote_name.empty()) {
-                lineout.String("remote", 6); lineout.String(remote_name.data(), remote_name.size());
-            }
+            //auto remote_name = repo_entry->remote_name(commit_id);
+            //if (!remote_name.empty()) {
+            //    lineout.String("remote", 6); lineout.String(remote_name.data(), remote_name.size());
+            //}
             auto commit_string = commit_id.to_hex_string();
             lineout.String("commit", 6); lineout.String(commit_string.data(), commit_string.size());
             lineout.String("repo", 4); lineout.String(repo_entry->path.data(), repo_entry->path.size());
