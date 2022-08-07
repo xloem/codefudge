@@ -97,6 +97,7 @@ struct repo_commits
                 }
             }
         }
+        // not found on any remote branches; it may be a remote tag the branch of which was rebased away. so, look for a shallow merge base.
         std::string best_branch;
         cppgit2::oid best_base;
         for (
@@ -114,6 +115,7 @@ struct repo_commits
                 }
             }
         }
+        // an exception here would imply failure in finding a missing object in remotes
         return repository.branch_remote_name(best_branch);
     }
 
