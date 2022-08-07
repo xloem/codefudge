@@ -97,6 +97,7 @@ struct repo_commits
                 }
             }
         }
+        std::cerr << "Had some trouble finding which remote " << commit.to_hex_string() << " came from ..." << endl;
         // not found on any remote branches; it may be a remote tag the branch of which was rebased away. so, look for a shallow merge base.
         std::string best_branch;
         cppgit2::oid best_base;
@@ -116,6 +117,7 @@ struct repo_commits
             }
         }
         // an exception here would imply failure in finding a missing object in remotes
+        std::cerr << "Looks like " << commit.to_hex_string() << " is nearest to " << best_branch << endl;
         return repository.branch_remote_name(best_branch);
     }
 
@@ -372,6 +374,10 @@ try_more:
         {
             size_t idx = diff_idcs[diff_idx];
             const cppgit2::diff::delta & need_eeg_and_blockchain = (*diff)[idx];
+
+            if (need_eeg_and_blockchain.status() == cppgit2::diff::delta::type::unmodified) {
+                continue;
+            }
             
             more_input.clear();
             if (!add_input(need_eeg_and_blockchain, true)) {
