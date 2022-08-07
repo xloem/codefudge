@@ -76,8 +76,29 @@ struct repo_commits
         }
     }
 
-    std::string remote_branch_name(cppgit2::oid const & commit)
+    std::string remote_name(cppgit2::oid const & commit)
     {
+        static thread_local std::vector<cppgit2::oid> non_remote_references;
+        non_remote_references.clear();
+        for (
+            reference_iter.init(repository);
+            reference_iter;
+            ++ reference_iter
+        ) {
+            auto branch = *reference_iter;
+            auto branch_tip = branch.resolve().target();
+            if (branch_tip == commit || repository.is_descendant_of(branch_tip, commit)) {
+                static thread_local std::string branch_name;
+                branch_name = branch.name();
+                try {
+                    return repository.branch_remote_name(branch_name);
+                } catch (cppgit2::git_exception &) {
+                    non_remote_references.push_back(branch_tip);
+                }
+            }
+        }
+        std::string best_branch;
+        cppgit2::oid best_base;
         for (
             remote_branch_iter.init(repository, cppgit2::branch::branch_type::remote);
             remote_branch_iter;
@@ -85,22 +106,22 @@ struct repo_commits
         ) {
             auto branch = *remote_branch_iter;
             auto branch_tip = branch.resolve().target();
-            if (branch_tip == commit || repository.is_descendant_of(branch_tip, commit)) {
-                return branch.name();
+            for (auto & reference : non_remote_references) {
+                auto merge_base = repository.find_merge_base(branch_tip, reference);
+                if (best_branch.empty() || repository.is_descendant_of(merge_base, best_base)) {
+                    best_base = merge_base;
+                    best_branch = branch.name();
+                }
             }
         }
-        return {};
+        return repository.branch_remote_name(best_branch);
     }
 
     void missing(cppgit2::oid const & missing_object, cppgit2::oid const & commit)
     {
         // the remote containing branch should have the missing object
-        std::string remote_branch_name = this->remote_branch_name(commit);
-        if (remote_branch_name.empty()) {
-            throw std::invalid_argument("no remote had " + missing_object.to_hex_string());
-        }
-        std::string remote_name = repository.branch_remote_name(remote_branch_name);
-        cerr << missing_object.to_hex_string() << " is missing; " << remote_branch_name << " should contain it from " << commit.to_hex_string() << endl;
+        std::string remote_name = this->remote_name(commit);
+        cerr << missing_object.to_hex_string() << " is missing; " << remote_name << " should contain it from " << commit.to_hex_string() << endl;
         missing_objects_by_remote_name[remote_name].insert(missing_object);
     }
 
@@ -209,6 +230,44 @@ struct repo_commits
         git_reference *c_ref;
         git_branch_t c_type;
     } remote_branch_iter;
+    
+    struct reference_iterator {
+        reference_iterator()
+        : c_ptr(0), c_ref(0)
+        { }
+        void init(cppgit2::repository & repo)
+        {
+            git_reference_iterator_new(&c_ptr, const_cast<git_repository*>(repo.c_ptr()));
+            ++(*this);
+        }
+        cppgit2::reference operator*()
+        {
+            return {c_ref};
+        }
+        void operator++()
+        {
+            if (git_reference_next(&c_ref, c_ptr) != 0) {
+                c_ref = 0;
+            }
+        }
+        operator bool() {
+            return c_ref;
+        }
+        void free()
+        {
+            if (c_ptr) {
+                git_reference_iterator_free(c_ptr);
+                c_ptr = 0;
+                c_ref = 0;
+            }
+        }
+        ~reference_iterator()
+        {
+            free();
+        }
+        git_reference_iterator *c_ptr;
+        git_reference *c_ref;
+    } reference_iter;
 };
 
 struct output_manager
@@ -342,9 +401,9 @@ try_more:
             lineout.String("input", 5); lineout.String(more_input.data.data(), more_input.data.size());
             lineout.String("label", 5); lineout.String(output.data.data(), output.data.size());
             auto commit_id = commit->id();
-            auto remote_branch_name = repo_entry->remote_branch_name(commit_id);
-            if (!remote_branch_name.empty()) {
-                lineout.String("branch", 6); lineout.String(remote_branch_name.data(), remote_branch_name.size());
+            auto remote_name = repo_entry->remote_name(commit_id);
+            if (!remote_name.empty()) {
+                lineout.String("remote", 6); lineout.String(remote_name.data(), remote_name.size());
             }
             auto commit_string = commit_id.to_hex_string();
             lineout.String("commit", 6); lineout.String(commit_string.data(), commit_string.size());
