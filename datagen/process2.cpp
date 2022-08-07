@@ -56,11 +56,22 @@ struct oid_pair_hash
     }
 };
 
+struct object_oid_hash
+{
+    template <class T>
+    std::size_t operator() (const T & object) const {
+        return oid_hash()(object.id());
+    }
+};
+
 struct repo_commits
 {
     std::string path;
     cppgit2::repository repository;
     std::vector<cppgit2::oid> commits;
+    //std::unordered_set<cppgit2::oid, oid_hash> commits;
+    //std::unordered_map<cppgit2::oid, std::vector<cppgit2::oid>> 
+    std::vector<cppgit2::reference> references;
     std::vector<std::pair<cppgit2::remote, cppgit2::refspec>> remote_fetchspecs;
     std::unordered_map<std::string, std::unordered_set<cppgit2::oid, oid_hash>> missing_objects_by_remote_name;
 
@@ -70,13 +81,43 @@ struct repo_commits
       repository(cppgit2::repository::open(path))
     {
         std::cerr << "Loading commits for " << path << std::endl;
+        std::vector<cppgit2::reference> references;
+        for (
+            reference_iter.init(repository);
+            reference_iter;
+            ++ reference_iter
+        ) {
+            references.push_back(*reference_iter);
+        }
+        progressbar bar(references.size());
+        std::vector<cppgit2::oid> commit_queue;
+        std::unordered_set<cppgit2::oid, oid_hash> visited_commits;
+        for (auto & reference : references) {
+            bar.update();
+            commit_queue.push_back(reference.resolve().target());
+            while (!commit_queue.empty()) {
+                auto it_success_pair = visited_commits.emplace(std::move(commit_queue.back()));
+                commit_queue.pop_back();
+                if (!it_success_pair.second) {
+                    continue;
+                }
+                auto & commit_oid = *it_success_pair.first;
+                commits.push_back(commit_oid.copy());
+                auto commit = repository.lookup_commit(commit_oid);
+                size_t parent_count = commit.parent_count();
+                for (size_t parent_idx = 0; parent_idx < parent_count; ++ parent_idx) {
+                    commit_queue.push_back(commit.parent_id(parent_idx));
+                }
+            }
+        }
         //static cppgit2::revwalk revwalk;
         //revwalk.reset();
-        auto revwalk = repository.create_revwalk();
-        revwalk.push_glob("*");
-        while (!revwalk.done()) {
-            commits.push_back(revwalk.next());
-        }
+        
+        //auto revwalk = repository.create_revwalk();
+        //revwalk.push_glob("*");
+        //while (!revwalk.done()) {
+        //    commits.push_back(revwalk.next());
+        //}
     }
 
     std::string remote_name(cppgit2::oid const & commit)
@@ -136,7 +177,7 @@ struct repo_commits
 
     std::string branch_remote_name(std::string const & branch_name)
     {
-	if (remote_fetchspecs.empty()) {
+        if (remote_fetchspecs.empty()) {
             std::cerr << "Loading remotes for " << path << std::endl;
             auto remote_names = repository.remote_list();
             progressbar bar(remote_names.count());
