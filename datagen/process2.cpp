@@ -380,6 +380,8 @@ struct output_manager
         string file_content_start,
         string file_content_end,
         string input_end,
+        string output_start,
+        string output_end,
         cppgit2::diff::options::flag diff_flags
     )
     : rng{seed},
@@ -394,7 +396,9 @@ struct output_manager
       file_name_end(file_name_end),
       file_content_start(file_content_start),
       file_content_end(file_content_end),
-      input_end(input_end)
+      input_end(input_end),
+      output_start(output_start),
+      output_end(output_end)
     {
         input.max = max_input_length;
         output.max = max_output_length;
@@ -474,17 +478,19 @@ try_more:
             }
 
             std::shuffle(diff_subidcs.begin(), diff_subidcs.end(), rng);
-            for (size_t diff_subidx = 0; input.can_append(file_name_start.size() + file_name_end.size() + file_content_start.size() + file_content_end.size() + 16) && diff_subidx < diff_subidcs.size(); ++ diff_subidx)
+            for (size_t diff_subidx = 0; more_input.can_append(file_name_start.size() + file_name_end.size() + file_content_start.size() + file_content_end.size() + 16 + input_end.size()) && diff_subidx < diff_subidcs.size(); ++ diff_subidx)
             {
                 size_t subidx = diff_subidcs[diff_subidx];
                 if (idx == subidx || skip_input_diff_idcs.count(subidx)) {
                     continue;
                 }
-                const cppgit2::diff::delta & need_eeg_and_blockchain = (*diff)[idx];
+                const cppgit2::diff::delta & need_eeg_and_blockchain = (*diff)[subidx];
                 add_input(need_eeg_and_blockchain, false);
             }
 
-            static thread_local rapidjson::StringBuffer linebuf;
+            more_input.append(input_end);
+
+            static thread_local rapidjson::StringBuffer linebuf(0, (input.max > 0 && input.max < ~0 ? input.max : 1024 * 1024) + (output.max > 0 && output.max < ~0 ? output.max : 1024 * 1024) + 64);
             static thread_local rapidjson::Writer<rapidjson::StringBuffer> lineout;
             linebuf.Clear();
             lineout.Reset(linebuf);
@@ -524,13 +530,15 @@ try_more:
             repo_entry->missing(exc, commit->id());
             return false;
         }
-        output.clear();
+        output.set(output_start.data(), output_start.size());
         if (!output.can_append(patch.size(true, true, true))) {
             return false;
         }
         cppgit2::data_buffer patch_buffer = patch.to_buffer();
         git_buf const * patch_c_struct = patch_buffer.c_ptr(); 
-        return output.append(patch_c_struct->ptr, patch_c_struct->size);
+        bool result = output.append(patch_c_struct->ptr, patch_c_struct->size);
+        result &= output.append(output_end);
+        return result;
     }
 
     bool add_input(const cppgit2::diff::delta & need_eeg_and_blockchain, bool allow_empty)
@@ -553,7 +561,7 @@ try_more:
 
         static thread_local std::string old_path;
         old_path = old_file.path();
-        size_t extra_size = file_name_start.size() + old_path.size() + file_name_end.size() + file_content_start.size() + file_content_end.size();
+        size_t extra_size = file_name_start.size() + old_path.size() + file_name_end.size() + file_content_start.size() + file_content_end.size() + input_end.size();
         size_t content_size = old_file.size();
         if (!more_input.can_append(extra_size + content_size)) {
             return false;
@@ -627,10 +635,27 @@ try_more:
             cut = other.cut;
         }
 
-        bool set(void const * data, size_t length)
+        /*
+        void reserve_for(void const * more_data, size_t length)
+        {
+            if (max) {
+                assert(max >= length + data.size());
+                max -= length;
+            }
+            #ifdef TOKENIZE
+            if (max_token_ids) {
+                size_t more_token_ids = token_length(more_data, more_length);
+                assert(max_token_ids >= more_token_ids + token_ids);
+                max_token_ids -= more_token_ids;
+            }
+            #endif
+        }
+        */
+
+        bool set(void const * more_data, size_t length)
         {
             clear();
-            return append(data, length);
+            return append(more_data, length);
         }
 
         bool append(std::string const & more_data)
@@ -667,6 +692,15 @@ try_more:
             data.append((char const *)more_data, more_length);
             return true;
         }
+
+        /*
+        bool is_cut()
+        {
+            assert(!max || max >= data.size());
+            assert(!max_token_ids || max_token_ids >= token_ids);
+            return (max && max == data.size()) || (max_token_ids && max_token_ids == token_ids);
+        }
+        */
 
         bool can_append(size_t more_length)
         {
@@ -716,6 +750,8 @@ try_more:
     std::string file_content_start;
     std::string file_content_end;
     std::string input_end;
+    std::string output_start;
+    std::string output_end;
     cppgit2::diff::options diff_options;
     repo_commits * repo_entry;
     cppgit2::commit const * commit;
@@ -731,14 +767,14 @@ int main(int argc, char **argv)
     unsigned int max_diffs_per_commit = 1;
     unsigned int max_commits_per_repo = 1;
     unsigned int seed = 0;
-    unsigned int max_input_length = ~0; //256; //~0;
+    unsigned int max_input_length = 1024 * 1024 * 16; //256; //~0;
     unsigned int max_output_length = ~0; //256; //~0; //1024;
     unsigned int cycles_over_repos = 16; //2;//~0;
     #ifdef TOKENIZE
     bool lengths_are_tokenized = false;
     string tokenizer_path = "tokenizer.json";
     #endif
-    bool cut_input = false;
+    bool cut_input = true;
     bool cut_output = false;
     string input_start = "";
     string message_start = "";
@@ -748,6 +784,8 @@ int main(int argc, char **argv)
     string file_content_start = "";
     string file_content_end = "";
     string input_end = "</s>";
+    string output_start = "";
+    string output_end = "</s>";
 
     diff::options diff_options;
     diff_options.set_flags(
@@ -782,6 +820,8 @@ int main(int argc, char **argv)
         file_content_start,
         file_content_end,
         input_end,
+        output_start,
+        output_end,
         diff_options.flags()
     );
 
