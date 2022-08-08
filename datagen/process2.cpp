@@ -104,12 +104,12 @@ struct repo_commits
                     continue;
                 }
                 auto & commit_oid = *it_success_pair.first;
-                commits.push_back(commit_oid.copy());
                 cppgit2::object object = repository.lookup_object(commit_oid, cppgit2::object::object_type::any);
                 if (object.type() == cppgit2::object::object_type::tag) {
                     object = object.as_tag().target();
                 }
                 cppgit2::commit commit = object.as_commit();
+                commits.push_back(commit.id().copy());
                 size_t parent_count = commit.parent_count();
                 for (size_t parent_idx = 0; parent_idx < parent_count; ++ parent_idx) {
                     commit_queue.push_back(commit.parent_id(parent_idx));
@@ -563,7 +563,7 @@ try_more:
 
         static thread_local std::string old_path;
         old_path = old_file.path();
-        size_t extra_size = file_name_start.size() + old_path.size() + file_name_end.size() + file_content_start.size() + file_content_end.size() + input_end.size();
+        size_t extra_size = file_name_start.size() + old_path.size() + file_name_end.size() + file_content_start.size() + file_content_end.size() + file_content_end.size() + input_end.size();
         size_t content_size = old_file.size();
         if (!more_input.can_append(extra_size + content_size)) {
             return false;
@@ -594,7 +594,7 @@ try_more:
             success &= more_input.append(content.raw_contents(), content_size);
         }
         success &= more_input.append(file_content_end);
-        if (!success) {
+        if (!success && !more_input.cut) {
             throw std::logic_error("actual append failed after can_append succeeded; missing way to revert state to before partial append; maybe length_tracked_value could push/pop its state leaving more_input unneeded");
         }
         return true;
