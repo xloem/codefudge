@@ -103,7 +103,11 @@ struct repo_commits
                 }
                 auto & commit_oid = *it_success_pair.first;
                 commits.push_back(commit_oid.copy());
-                auto commit = repository.lookup_commit(commit_oid);
+                cppgit2::object object = repository.lookup_object(commit_oid, cppgit2::object::object_type::any);
+                if (object.type() == cppgit2::object::object_type::tag) {
+                    object = object.as_tag().target();
+                }
+                cppgit2::commit commit = object.as_commit();
                 size_t parent_count = commit.parent_count();
                 for (size_t parent_idx = 0; parent_idx < parent_count; ++ parent_idx) {
                     commit_queue.push_back(commit.parent_id(parent_idx));
