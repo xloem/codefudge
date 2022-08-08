@@ -16,7 +16,9 @@ using namespace cppgit2;
 #include <rapidjson/writer.h>
 #include <rapidjson/stringbuffer.h>
 
+#define cout cerr
 #include "progressbar/include/progressbar.hpp"
+#undef cout
 
 #ifdef TOKENIZE
 #include "tinytokenizers.rs.h"
