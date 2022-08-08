@@ -105,7 +105,7 @@ struct repo_commits
                 }
                 auto & commit_oid = *it_success_pair.first;
                 cppgit2::object object = repository.lookup_object(commit_oid, cppgit2::object::object_type::any);
-                if (object.type() == cppgit2::object::object_type::tag) {
+                while (object.type() == cppgit2::object::object_type::tag) {
                     object = object.as_tag().target();
                 }
                 cppgit2::commit commit = object.as_commit();
