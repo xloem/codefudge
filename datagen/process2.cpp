@@ -24,6 +24,7 @@ using namespace cppgit2;
 #include "tinytokenizers.rs.h"
 #endif
 
+// C++ standard library hashing functor for cppgit2 oids
 struct oid_hash
 {
     std::size_t operator() (const cppgit2::oid & oid) const
@@ -50,19 +51,56 @@ struct oid_hash
     }
 };
 
-struct oid_pair_hash
-{
-    template <class T1, class T2>
-    std::size_t operator() (const std::pair<T1, T2> & pair) const {
-        return oid_hash()(pair.first) ^ (oid_hash()(pair.second) << 1);
-    }
-};
-
-struct object_oid_hash
+// C++ standard library hashing functor for cppgit2 objects
+struct object_hash
 {
     template <class T>
     std::size_t operator() (const T & object) const {
         return oid_hash()(object.id());
+    }
+};
+
+// rapidjson encoding for binary data
+template<typename CharType = char>
+struct InclusiveUTF8 : public rapidjson::UTF8<CharType>
+{
+    // Encode malformed input as Latin-1 Supplement, which preserves raw values.
+    template <typename InputStream>
+    static bool Decode(InputStream &is, unsigned* codepoint)
+    {
+        typename InputStream::Ch c = is.Peek();
+        if (rapidjson::UTF8<CharType>::Decode(is, codepoint)) {
+            return true;
+        } else {
+            if (c < 0x100) {
+                *codepoint = static_cast<unsigned char>(c);
+                return true;
+            } else {
+                return false;
+            }
+        }
+    }
+};
+
+// rapidjson decoding that escapes binary special chars
+template<typename CharType = char>
+struct ExtraEscapedUTF8 : public rapidjson::UTF8<CharType>
+{
+    // Encode Latin-1 Supplement C1 Controls with string escaping
+    template<typename OutputStream>
+    static void EncodeUnsafe(OutputStream& os, unsigned codepoint)
+    {
+        static const typename OutputStream::Ch hexDigits[16] = { '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F' };
+        if (codepoint >= 0x80 && codepoint < 0xa0) {
+            os.PutUnsafe('\\');
+            os.PutUnsafe('u');
+            os.PutUnsafe('0');
+            os.PutUnsafe('0');
+            os.PutUnsafe(hexDigits[(codepoint >> 4)     ]);
+            os.PutUnsafe(hexDigits[(codepoint     ) & 15]);
+        } else {
+            rapidjson::UTF8<CharType>::EncodeUnsafe(os, codepoint);
+        }
     }
 };
 
@@ -493,7 +531,7 @@ try_more:
             more_input.append(input_end);
 
             static thread_local rapidjson::StringBuffer linebuf(0, (input.max > 0 && input.max < ~0 ? input.max : 1024 * 1024) + (output.max > 0 && output.max < ~0 ? output.max : 1024 * 1024) + 64);
-            static thread_local rapidjson::Writer<rapidjson::StringBuffer> lineout;
+            static thread_local rapidjson::Writer<rapidjson::StringBuffer, InclusiveUTF8<>, ExtraEscapedUTF8<>> lineout;
             linebuf.Clear();
             lineout.Reset(linebuf);
             lineout.StartObject();
