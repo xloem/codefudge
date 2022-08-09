@@ -43,7 +43,8 @@ trainer = tokenizers.trainers.UnigramTrainer(
         special_tokens=['<pad>', '<unk>', '<bos-1>', '<eos-1>', '<bos-2>', '<eos-2>', '<bos-3>', '<eos-3>', '<bos-4>', '<eos-4>'],
         max_piece_length=1024,
 )
-words = tokenizers.Regex('[A-Za-z_][0-9A-Za-z_]*|\\s\\s*|(.)\\1*|..') # as many common token characters as available, any length of whitespace, >=1 repetitions of any character, and pairs of any 2 characters (unicode not addressed yet)
+# as many common token characters as available (hat would be needed to include unicode tokens?), any length of whitespace, a single digit in base 10, >=1 repetitions of any character, and pairs of any 2 characters.
+words = tokenizers.Regex('[A-Za-z_][0-9A-Za-z_]*|\\s\\s*|[0-9]|(.)\\1*|..')
 tokenizer.pre_tokenizer = tokenizers.pre_tokenizers.Split(words, 'isolated')
 tokenizer.train_from_iterator(input_text(), trainer=trainer, length=len(files))
 #tokenizer.save(f'{model_name}/trained_tokenizer.json')
