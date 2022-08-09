@@ -39,11 +39,11 @@ def input_text():
 
 tokenizer = tokenizers.Tokenizer(tokenizers.models.Unigram())
 trainer = tokenizers.trainers.UnigramTrainer(
-        vocab_size=vanilla_tokenizer.vocab_size - 9, # 9 special tokens
-        special_tokens=['<pad>', '<bos-1>', '<eos-1>', '<bos-2>', '<eos-2>', '<bos-3>', '<eos-3>', '<bos-4>', '<eos-4>'],
+        vocab_size=vanilla_tokenizer.vocab_size - 10, # 10 special tokens
+        special_tokens=['<pad>', '<unk>', '<bos-1>', '<eos-1>', '<bos-2>', '<eos-2>', '<bos-3>', '<eos-3>', '<bos-4>', '<eos-4>'],
         max_piece_length=1024,
 )
-words = tokenizers.Regex('[A-Za-z_][0-9A-Za-z_]*| {2}| {4}| {8}|.')
+words = tokenizers.Regex('[A-Za-z_][0-9A-Za-z_]*|\\s\\s*|(.)\\1*|..') # as many common token characters as available, any length of whitespace, >=1 repetitions of any character, and pairs of any 2 characters (unicode not addressed yet)
 tokenizer.pre_tokenizer = tokenizers.pre_tokenizers.Split(words, 'isolated')
 tokenizer.train_from_iterator(input_text(), trainer=trainer, length=len(files))
 #tokenizer.save(f'{model_name}/trained_tokenizer.json')
@@ -54,6 +54,7 @@ new_tokenizer = transformers.PreTrainedTokenizerFast(
     truncation_side = vanilla_tokenizer.truncation_side,
     model_input_names = vanilla_tokenizer.model_input_names,
     pad_token = '<pad>',
+    unk_token = '<unk>',
     additional_special_tokens = ['<bos-1>', '<eos-1>', '<bos-2>', '<eos-2>', '<bos-3>', '<eos-3>', '<bos-4>', '<eos-4>'],
 )
 new_tokenizer.save_pretrained(f'{model_name}/trained_tokenizer')
