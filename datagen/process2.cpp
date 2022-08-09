@@ -715,6 +715,7 @@ try_more:
         bool append(void const * more_data, size_t more_length)
         {
             if (max) {
+                assert(max >= data.size());
                 if (cut) {
                     if (max == data.size()) {
                         return false;
@@ -736,10 +737,11 @@ try_more:
                 token_ids += more_token_ids;
             } else
             #endif
-            if ((cut & max) && data.size() + more_length > max) {
+            if ((cut & (bool)max) && data.size() + more_length > max) {
                 more_length = max - data.size();
             }
             data.append((char const *)more_data, more_length);
+            assert(!max || max >= data.size());
             return true;
         }
 
@@ -817,7 +819,7 @@ int main(int argc, char **argv)
     unsigned int max_diffs_per_commit = 1;
     unsigned int max_commits_per_repo = 1;
     unsigned int seed = 0;
-    unsigned int max_input_length = 1024 * 1024 * 16; //256; //~0;
+    unsigned int max_input_length = 1024 * 128;//1024 * 16; //256; //~0;
     unsigned int max_output_length = ~0; //256; //~0; //1024;
     unsigned int cycles_over_repos = 16; //2;//~0;
     #ifdef TOKENIZE
