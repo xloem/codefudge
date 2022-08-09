@@ -114,6 +114,7 @@ struct repo_commits
     std::vector<cppgit2::reference> references;
     std::vector<std::pair<cppgit2::remote, cppgit2::refspec>> remote_fetchspecs;
     std::unordered_map<std::string, std::unordered_set<cppgit2::oid, oid_hash>> missing_objects_by_remote_name;
+    std::unordered_map<cppgit2::oid, std::string, oid_hash> remote_names_by_nonremote_oids;
 
 
     repo_commits(char const * path)
@@ -193,12 +194,18 @@ struct repo_commits
             }
             auto branch_tip = branch.resolve().target();
             if (branch_tip == commit || repository.is_descendant_of(branch_tip, commit)) {
+                auto entry = remote_names_by_nonremote_oids.find(branch_tip);
+                if (entry != remote_names_by_nonremote_oids.end()) {
+                    std::cerr << "Found it before: " << entry->second << std::endl;
+                    return entry->second;
+                }
                 non_remote_references.push_back(branch_tip);
             }
         }
         // not found on any remote branches; it may be a remote tag the branch of which was rebased away. so, look for a shallow merge base.
         std::string best_branch;
         cppgit2::oid best_base;
+        cppgit2::oid mapped_reference;
         for (
             remote_branch_iter.init(repository, cppgit2::branch::branch_type::remote);
             remote_branch_iter;
@@ -211,12 +218,15 @@ struct repo_commits
                 if (best_branch.empty() || repository.is_descendant_of(merge_base, best_base)) {
                     best_base = merge_base;
                     best_branch = branch.name();
+                    mapped_reference = reference;
                 }
             }
         }
         // an exception here would imply failure in finding a missing object in remotes
         std::cerr << "Looks like " << commit.to_hex_string() << " is nearest to " << best_branch << endl;
-        return branch_remote_name(best_branch);
+        std::string remote_name = branch_remote_name(best_branch);
+        remote_names_by_nonremote_oids[mapped_reference] = remote_name;
+        return remote_name;
     }
 
     std::string branch_remote_name(std::string const & branch_name)
