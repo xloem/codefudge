@@ -114,6 +114,7 @@ struct repo_commits
     std::vector<cppgit2::reference> references;
     std::vector<std::pair<cppgit2::remote, cppgit2::refspec>> remote_fetchspecs;
     std::unordered_map<std::string, std::unordered_set<cppgit2::oid, oid_hash>> missing_objects_by_remote_name;
+    std::unordered_map<cppgit2::oid, std::string, oid_hash> remote_names_by_missing_commit;
     std::unordered_map<cppgit2::oid, std::string, oid_hash> remote_names_by_nonremote_oids;
 
 
@@ -258,7 +259,14 @@ struct repo_commits
     void missing(cppgit2::oid const & missing_object, cppgit2::oid const & commit)
     {
         // the remote containing branch should have the missing object
-        std::string remote_name = this->remote_name(commit);
+        std::string remote_name;
+        auto name_it = remote_names_by_missing_commit.find(commit);
+        if (name_it != remote_names_by_missing_commit.end()) {
+            remote_name = name_it->second;
+        } else {
+            remote_name = this->remote_name(commit);
+            remote_names_by_missing_commit[commit] = remote_name;
+        }
         cerr << missing_object.to_hex_string() << " is missing; " << remote_name << " should contain it from " << commit.to_hex_string() << endl;
         missing_objects_by_remote_name[remote_name].insert(missing_object);
     }
@@ -282,6 +290,8 @@ struct repo_commits
 
     bool fetch_missing()
     {
+        //remote_names_by_missing_commits.clear();
+        
         if (missing_objects_by_remote_name.empty()) {
             return false;
         }
@@ -619,6 +629,9 @@ try_more:
 
         blob content;
         if (!old_id.is_zero()) {
+            if (allow_empty && visited_oid_hashes.count(oid_hash()(old_id))) {
+                return false;
+            }
             try {
                 content = repo_entry->repository.lookup_blob(old_id);
             } catch (cppgit2::git_exception &exc) {
@@ -644,6 +657,9 @@ try_more:
         success &= more_input.append(file_content_end);
         if (!success && !more_input.cut) {
             throw std::logic_error("actual append failed after can_append succeeded; missing way to revert state to before partial append; maybe length_tracked_value could push/pop its state leaving more_input unneeded");
+        }
+        if (allow_empty && !old_id.is_zero()) {
+            visited_oid_hashes.insert(oid_hash()(old_id));
         }
         return true;
     }
@@ -812,7 +828,9 @@ try_more:
     std::unordered_set<size_t> skip_input_diff_idcs;
     std::unordered_map<cppgit2::oid, std::string, oid_hash> outputs;
     cppgit2::blob content;
+    static std::unordered_multiset<size_t> visited_oid_hashes;
 };
+std::unordered_multiset<size_t> output_manager::visited_oid_hashes;
 
 int main(int argc, char **argv)
 {
@@ -883,82 +901,91 @@ int main(int argc, char **argv)
     {
         for (char **pathptr = &argv[1]; pathptr != &argv[argc]; ++ pathptr)
         {
-            if (!repos.count(*pathptr)) {
-                repos.emplace(*pathptr, *pathptr);
-            }
-            repo_commits & repo_entry = repos.at(*pathptr);
-            auto & repository = repo_entry.repository;
-            auto & commit_oids = repo_entry.commits;
-
-            // this could simply select a random index repeatedly
-            shuffle(commit_oids.begin(), commit_oids.end(), rng);
+            try {
+                if (!repos.count(*pathptr)) {
+                    repos.emplace(*pathptr, *pathptr);
+                }
+                repo_commits & repo_entry = repos.at(*pathptr);
+                auto & repository = repo_entry.repository;
+                auto & commit_oids = repo_entry.commits;
     
-            int commits_output = 0;
-            for (int commit_idx = 0; commits_output < max_commits_per_repo && commit_idx < commit_oids.size(); ++ commit_idx) {
-                cppgit2::commit commit;
-                try {
-                    commit = repository.lookup_commit(commit_oids[commit_idx]);
-                } catch (cppgit2::git_exception &exc) {
-                    repo_entry.missing(exc, commit_oids[commit_idx]);
-                    repo_entry.fetch_missing();
-                    commit = repository.lookup_commit(commit_oids[commit_idx]);
+                if (commit_oids.size() < max_commits_per_repo * cycles_over_repos) {
+                    std::cerr << "Skipping because it has few commits: " << pathptr << std::endl;
                 }
     
-                static thread_local cppgit2::index possible_conflicts, merges;
-                cppgit2::diff diff;
-    
-                // commit.id().to_hex_string()
-                // commit.message() commit.message_encoding()
-                // commit.parent(n)  commit.parent_count()
-                // commit.tree()
-    
-    
-                switch (commit.parent_count()) {
-                case 0:
-                    diff = repository.create_diff_tree_to_tree(tree(), commit.tree(), diff_options);
-                    break;
-                case 1:
-                    diff = repository.create_diff_tree_to_tree(commit.parent(0).tree(), commit.tree(), diff_options);
-                    break;
-                case 2:
-                    possible_conflicts = repository.merge_commits(commit.parent(0), commit.parent(1));
-                    merges.clear();
-                    merges.read_tree(commit.tree());
-                    diff = repository.create_diff_index_to_index(possible_conflicts, merges, diff_options);
-                    break;
-                default:
-                    throw std::logic_error("unimplemented: multimerge");
+                // this could simply select a random index repeatedly
+                shuffle(commit_oids.begin(), commit_oids.end(), rng);
+        
+                int commits_output = 0;
+                for (int commit_idx = 0; commits_output < max_commits_per_repo && commit_idx < commit_oids.size(); ++ commit_idx) {
+                    cppgit2::commit commit;
+                    try {
+                        commit = repository.lookup_commit(commit_oids[commit_idx]);
+                    } catch (cppgit2::git_exception &exc) {
+                        repo_entry.missing(exc, commit_oids[commit_idx]);
+                        repo_entry.fetch_missing();
+                        commit = repository.lookup_commit(commit_oids[commit_idx]);
+                    }
+        
+                    static thread_local cppgit2::index possible_conflicts, merges;
+                    cppgit2::diff diff;
+        
+                    // commit.id().to_hex_string()
+                    // commit.message() commit.message_encoding()
+                    // commit.parent(n)  commit.parent_count()
+                    // commit.tree()
+        
+        
+                    switch (commit.parent_count()) {
+                    case 0:
+                        diff = repository.create_diff_tree_to_tree(tree(), commit.tree(), diff_options);
+                        break;
+                    case 1:
+                        diff = repository.create_diff_tree_to_tree(commit.parent(0).tree(), commit.tree(), diff_options);
+                        break;
+                    case 2:
+                        possible_conflicts = repository.merge_commits(commit.parent(0), commit.parent(1));
+                        merges.clear();
+                        merges.read_tree(commit.tree());
+                        diff = repository.create_diff_index_to_index(possible_conflicts, merges, diff_options);
+                        break;
+                    default:
+                        throw std::logic_error("unimplemented: multimerge");
+                    }
+        
+                    diff.find_similar(); // finds renames, copies. can have options passed.
+                    // diff.to_string()
+                    // diff.for_each([](const cppgit2::diff::delta &, float) {})
+                    // diff.print(diff:format, [](const diff
+        
+                    outputter.init_commit(&repo_entry, &commit, &diff);
+                    if (outputter.process(max_diffs_per_commit)) {
+                        commits_output ++;
+                    }
+                    // OPTIMIZE: this selection of inputs can be done by randomizing a range of integers and picking by integers
+                    // no need to enumerate them all [is this still relevant?]
+                    //    #ifdef TOKENIZE
+                    //    if (lengths_are_tokenized) {
+                    //        tokenization = tokenizer->encode(output, true);
+                    //        output_size = tokenization->get_ids().size();
+                    //        if (output_size > max_output_length) {
+                    //            if (!cut_output) {
+                    //                continue;
+                    //            } else {
+                    //                // BUG: not cutting output due to tokenization funcs haven't implemented yet
+                    //            }
+                    //        }
+                    //    } else
+                    //    #endif
+                    //    {
+                        // BUG: haven't implemented functions in tokenizer to find offset, so not cutting input
+                        //if (input_size > max_input_length) {
+                        //    input.resize(max_input_length);
+                        //}
                 }
-    
-                diff.find_similar(); // finds renames, copies. can have options passed.
-                // diff.to_string()
-                // diff.for_each([](const cppgit2::diff::delta &, float) {})
-                // diff.print(diff:format, [](const diff
-    
-                outputter.init_commit(&repo_entry, &commit, &diff);
-                if (outputter.process(max_diffs_per_commit)) {
-                    commits_output ++;
-                }
-                // OPTIMIZE: this selection of inputs can be done by randomizing a range of integers and picking by integers
-                // no need to enumerate them all [is this still relevant?]
-                //    #ifdef TOKENIZE
-                //    if (lengths_are_tokenized) {
-                //        tokenization = tokenizer->encode(output, true);
-                //        output_size = tokenization->get_ids().size();
-                //        if (output_size > max_output_length) {
-                //            if (!cut_output) {
-                //                continue;
-                //            } else {
-                //                // BUG: not cutting output due to tokenization funcs haven't implemented yet
-                //            }
-                //        }
-                //    } else
-                //    #endif
-                //    {
-                    // BUG: haven't implemented functions in tokenizer to find offset, so not cutting input
-                    //if (input_size > max_input_length) {
-                    //    input.resize(max_input_length);
-                    //}
+            } catch (std::exception & e) {
+                std::cerr << *pathptr << ": " << e.what() << std::endl;
+                throw;
             }
         }
     }
