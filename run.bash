@@ -15,12 +15,7 @@ npm install --global @web3-storage/w3
 python3 -m pip install -U pip pynacl datasets sacremoses rouge-score git+https://github.com/xloem/adapter-transformers.git@longt5 torch
 
 # download recent model to work off of
-read hash cid < w3put.log
-curl --head https://dweb.link/ipfs/"$cid" | tr -d '\r' | grep -i ^location: | {
-	read location uri
-	wget --mirror "$uri"
-	cp -va *.ipfs.dweb.link/fudge-* .
-}
+bash download.bash
 
 # link data from google drive if present
 if [ -e ../drive/MyDrive/codefudge/test.json ]

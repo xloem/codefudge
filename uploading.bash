@@ -16,5 +16,5 @@ do
 	git commit -m "$(head -n 1 w3put.log)"
 	git push
 	rm -rf "$model"/"$model"
-	sleep $((60*15))
+	sleep $((60*30))
 done

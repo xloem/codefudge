@@ -3,8 +3,8 @@
 # example_run_summarization.py is a direct copy from the adapter-transformers repository
 
 MODEL=google/long-t5-tglobal-base
-EPOCHS=2
-GRAD_ACCUM=2
+EPOCHS=3
+GRAD_ACCUM=3
 
 # 16 GB VRAM
 BATCH_SIZE=1
