@@ -6,7 +6,7 @@ then
   ipfs daemon &
   daemonpid=$!
   sleep 15
-  ipfs get "$hash"
+  ipfs get "$cid"
   kill $daemonpid
   cp -va "$hash"/fudge-* .
 else
