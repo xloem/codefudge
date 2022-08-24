@@ -910,7 +910,7 @@ int main(int argc, char **argv)
                 auto & commit_oids = repo_entry.commits;
     
                 if (commit_oids.size() < max_commits_per_repo * cycles_over_repos) {
-                    std::cerr << "Skipping because it has few commits: " << pathptr << std::endl;
+                    std::cerr << "Skipping because it has few commits: " << *pathptr << std::endl;
                 }
     
                 // this could simply select a random index repeatedly
@@ -953,7 +953,13 @@ int main(int argc, char **argv)
                         throw std::logic_error("unimplemented: multimerge");
                     }
         
-                    diff.find_similar(); // finds renames, copies. can have options passed.
+                    try {
+                    	diff.find_similar(); // finds renames, copies. can have options passed.
+                    } catch (cppgit2::git_exception &exc) {
+                        repo_entry.missing(exc, commit_oids[commit_idx]);
+                        repo_entry.fetch_missing();
+                    	diff.find_similar();
+                    }
                     // diff.to_string()
                     // diff.for_each([](const cppgit2::diff::delta &, float) {})
                     // diff.print(diff:format, [](const diff
