@@ -8,7 +8,7 @@ then
   sleep 15
   ipfs get "$cid"
   kill $daemonpid
-  cp -va "$hash"/fudge-* .
+  cp -va "$cid"/fudge-* .
 else
   uri=https://"${cid}".ipfs.dweb.link/
 	wget --mirror "$uri"
