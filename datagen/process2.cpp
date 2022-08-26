@@ -137,20 +137,21 @@ struct repo_commits
         std::unordered_set<cppgit2::oid, oid_hash> visited_commits;
         for (auto & reference : references) {
             bar.update();
-            auto ref_commit = ref_oid_to_commit(reference.resolve().target());
-            auto ref_id = ref_commit.id();
-            commit_queue.emplace_back(ref_id.copy(), ref_id);
+            auto ref_object = ref_oid_to_commit_object(reference.resolve().target());
+            auto ref_id = ref_object.id();
+            commit_queue.emplace_back(ref_id, ref_id);
             while (!commit_queue.empty()) {
-                auto tip_oid = commit_queue.back().first.copy();
-                auto commit_oid = commit_queue.back().second.copy();
+                auto tip_oid = commit_queue.back().first;
+                auto commit_oid = commit_queue.back().second;
                 auto it_success_pair = visited_commits.emplace(commit_oid);
                 commit_queue.pop_back();
                 if (!it_success_pair.second) {
                     continue;
                 }
                 try {
-                    cppgit2::commit commit = ref_oid_to_commit(commit_oid);
-                    commits.push_back(commit_oid.copy());
+                    cppgit2::object object = ref_oid_to_commit_object(commit_oid);
+		    cppgit2::commit commit = object.as_commit();
+                    commits.push_back(commit_oid);
                     size_t parent_count = commit.parent_count();
                     for (size_t parent_idx = 0; parent_idx < parent_count; ++ parent_idx) {
                         commit_queue.emplace_back(tip_oid, commit.parent_id(parent_idx));
@@ -186,7 +187,7 @@ struct repo_commits
         ) {
             auto branch = *remote_branch_iter;
             auto branch_tip = branch.resolve().target();
-            branch_tip = ref_oid_to_commit(branch_tip).id();
+            branch_tip = ref_oid_to_commit_object(branch_tip).id();
             if (branch_tip == commit || repository.is_descendant_of(branch_tip, commit)) {
                 std::cerr << "Found remote branch " << branch.name() << " containing " << commit.to_hex_string() << std::endl;
                 return branch_remote_name(branch.name());
@@ -205,7 +206,7 @@ struct repo_commits
                 continue;
             }
             auto branch_tip = branch.resolve().target();
-            branch_tip = ref_oid_to_commit(branch_tip).id();
+            branch_tip = ref_oid_to_commit_object(branch_tip).id();
             if (branch_tip == commit || repository.is_descendant_of(branch_tip, commit)) {
                 auto entry = remote_names_by_nonremote_oids.find(branch_tip);
                 if (entry != remote_names_by_nonremote_oids.end()) {
@@ -226,7 +227,7 @@ struct repo_commits
         ) {
             auto branch = *remote_branch_iter;
             auto branch_tip = branch.resolve().target();
-            branch_tip = ref_oid_to_commit(branch_tip).id();
+            branch_tip = ref_oid_to_commit_object(branch_tip).id();
             for (auto & reference : non_remote_references) {
                 auto merge_base = repository.find_merge_base(branch_tip, reference);
                 if (best_branch.empty() || repository.is_descendant_of(merge_base, best_base)) {
@@ -431,13 +432,13 @@ struct repo_commits
         git_reference *c_ref;
     } reference_iter;
 
-    cppgit2::commit ref_oid_to_commit(cppgit2::oid const & oid)
+    cppgit2::object ref_oid_to_commit_object(cppgit2::oid const & oid)
     {
         cppgit2::object object = repository.lookup_object(oid, cppgit2::object::object_type::any);
         while (object.type() == cppgit2::object::object_type::tag) {
             object = object.as_tag().target();
         }
-        return object.as_commit().copy();
+        return object;
     }
 };
 
