@@ -18,11 +18,14 @@ MAX_OUT_LEN=2158 # with training embeddings; 2164 failed after 5434
 DATAFILE=test.json
 OUTPUT_DIR=fudge-"${MODEL##*/}"
 
+OPTIM=adafactor
+WARMUP_STEPS=$((60*8/GRAD_ACCUM/BATCH_SIZE))
+
 mkdir -p "$OUTPUT_DIR"
 if ! [ -e "$OUTPUT_DIR"/.already_downloaded_model ]
 then
     echo 'downloading groomed base model ...'
-    python3 example_run_summarization.py  --adapter_config pfeiffer+inv --model_name_or_path "$MODEL" --do_train --output_dir "$OUTPUT_DIR/tmp" --per_device_train_batch_size="$BATCH_SIZE" --overwrite_output_dir --predict_with_generate --train_file "$DATAFILE" --train_adapter True --num_train_epochs 1 --max_train_samples 1 --max_target_length "$MAX_OUT_LEN" >/dev/null && touch "$OUTPUT_DIR"/.already_downloaded_model
+    python3 example_run_summarization.py --model_name_or_path "$MODEL" --do_train --output_dir "$OUTPUT_DIR/tmp" --per_device_train_batch_size="$BATCH_SIZE" --overwrite_output_dir --predict_with_generate --train_file "$DATAFILE" --train_adapter True --num_train_epochs 1 --max_train_samples 1 --max_target_length "$MAX_OUT_LEN" >/dev/null && touch "$OUTPUT_DIR"/.already_downloaded_model
     rm -rf "$OUTPUT_DIR"/tmp
 fi
 if [ -e "$OUTPUT_DIR"/summarization/adapter_config.json ]
@@ -34,7 +37,7 @@ then
 	DATAFILE="$REAL_DATAFILE"
 
 	echo continuing grooming of adapter ... machine learning models suffer much less than human beings when groomed for behaviors.
-	TRANSFORMERS_OFFLINE=1 python3 example_run_summarization_plus_embeddings.py --learning_rate 0.3e-05 --optim adafactor --tokenizer_name "$OUTPUT_DIR" --load_adapter "$OUTPUT_DIR"/summarization --gradient_accumulation_steps "$GRAD_ACCUM" --model_name_or_path "$MODEL" --do_train --output_dir "$OUTPUT_DIR" --per_device_train_batch_size="$BATCH_SIZE" --overwrite_output_dir --predict_with_generate --train_file "$DATAFILE" --train_adapter True --num_train_epochs "$EPOCHS" --max_target_length "$MAX_OUT_LEN"
+	TRANSFORMERS_OFFLINE=1 python3 example_run_summarization_plus_embeddings.py --learning_rate 0.3e-05 --optim "$OPTIM" --warmup_steps "$WARMUP_STEPS" --tokenizer_name "$OUTPUT_DIR" --load_adapter "$OUTPUT_DIR"/summarization --gradient_accumulation_steps "$GRAD_ACCUM" --model_name_or_path "$MODEL" --do_train --output_dir "$OUTPUT_DIR" --per_device_train_batch_size="$BATCH_SIZE" --overwrite_output_dir --predict_with_generate --train_file "$DATAFILE" --train_adapter True --num_train_epochs "$EPOCHS" --max_target_length "$MAX_OUT_LEN"
 else
 	if ! [ -e "$OUTPUT_DIR"/tokenizer ]
 	then
@@ -49,5 +52,5 @@ else
 	DATAFILE="$REAL_DATAFILE"
 
 	echo grooming a new adapter ... machine learning models suffer much less than human beings when groomed for behaviors.
-	TRANSFORMERS_OFFLINE=1 python3 example_run_summarization_plus_embeddings.py --adapter_config pfeiffer+inv --optim adafactor --tokenizer_name "$OUTPUT_DIR"/tokenizer --gradient_accumulation_steps "$GRAD_ACCUM" --model_name_or_path "$MODEL" --do_train --output_dir "$OUTPUT_DIR" --per_device_train_batch_size="$BATCH_SIZE" --overwrite_output_dir --predict_with_generate --train_file "$DATAFILE" --train_adapter True --num_train_epochs "$EPOCHS" --max_target_length "$MAX_OUT_LEN"
+	TRANSFORMERS_OFFLINE=1 python3 example_run_summarization_plus_embeddings.py --adapter_config pfeiffer+inv --optim "$OPTIM" --warmup_steps "$WARMUP_STEPS" --tokenizer_name "$OUTPUT_DIR"/tokenizer --gradient_accumulation_steps "$GRAD_ACCUM" --model_name_or_path "$MODEL" --do_train --output_dir "$OUTPUT_DIR" --per_device_train_batch_size="$BATCH_SIZE" --overwrite_output_dir --predict_with_generate --train_file "$DATAFILE" --train_adapter True --num_train_epochs "$EPOCHS" --max_target_length "$MAX_OUT_LEN"
 fi
