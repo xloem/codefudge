@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cstdio>
+#include <deque>
 #include <random>
 #include <unordered_map>
 #include <unordered_set>
@@ -132,27 +133,36 @@ struct repo_commits
             references.push_back(*reference_iter);
         }
         progressbar bar(references.size());
-        std::vector<cppgit2::oid> commit_queue;
+        std::deque<std::pair<cppgit2::oid, cppgit2::oid>> commit_queue;
         std::unordered_set<cppgit2::oid, oid_hash> visited_commits;
         for (auto & reference : references) {
             bar.update();
-            commit_queue.push_back(reference.resolve().target());
+            auto ref_commit = ref_oid_to_commit(reference.resolve().target());
+            auto ref_id = ref_commit.id();
+            commit_queue.emplace_back(ref_id.copy(), ref_id);
             while (!commit_queue.empty()) {
-                auto it_success_pair = visited_commits.emplace(std::move(commit_queue.back()));
+                auto tip_oid = commit_queue.back().first.copy();
+                auto commit_oid = commit_queue.back().second.copy();
+                auto it_success_pair = visited_commits.emplace(commit_oid);
                 commit_queue.pop_back();
                 if (!it_success_pair.second) {
                     continue;
                 }
-                auto & commit_oid = *it_success_pair.first;
-                cppgit2::object object = repository.lookup_object(commit_oid, cppgit2::object::object_type::any);
-                while (object.type() == cppgit2::object::object_type::tag) {
-                    object = object.as_tag().target();
-                }
-                cppgit2::commit commit = object.as_commit();
-                commits.push_back(commit.id().copy());
-                size_t parent_count = commit.parent_count();
-                for (size_t parent_idx = 0; parent_idx < parent_count; ++ parent_idx) {
-                    commit_queue.push_back(commit.parent_id(parent_idx));
+                try {
+                    cppgit2::commit commit = ref_oid_to_commit(commit_oid);
+                    commits.push_back(commit_oid.copy());
+                    size_t parent_count = commit.parent_count();
+                    for (size_t parent_idx = 0; parent_idx < parent_count; ++ parent_idx) {
+                        commit_queue.emplace_back(tip_oid, commit.parent_id(parent_idx));
+                    }
+                } catch (cppgit2::git_exception const &exc) {
+                    visited_commits.erase(commit_oid);
+                    if (!missing(exc, tip_oid)) {
+                        commit_queue.emplace_back(tip_oid, commit_oid);
+                        fetch_missing();
+                    } else {
+                        commit_queue.emplace_front(tip_oid, commit_oid);
+                    }
                 }
             }
         }
@@ -176,6 +186,7 @@ struct repo_commits
         ) {
             auto branch = *remote_branch_iter;
             auto branch_tip = branch.resolve().target();
+            branch_tip = ref_oid_to_commit(branch_tip).id();
             if (branch_tip == commit || repository.is_descendant_of(branch_tip, commit)) {
                 std::cerr << "Found remote branch " << branch.name() << " containing " << commit.to_hex_string() << std::endl;
                 return branch_remote_name(branch.name());
@@ -194,6 +205,7 @@ struct repo_commits
                 continue;
             }
             auto branch_tip = branch.resolve().target();
+            branch_tip = ref_oid_to_commit(branch_tip).id();
             if (branch_tip == commit || repository.is_descendant_of(branch_tip, commit)) {
                 auto entry = remote_names_by_nonremote_oids.find(branch_tip);
                 if (entry != remote_names_by_nonremote_oids.end()) {
@@ -214,6 +226,7 @@ struct repo_commits
         ) {
             auto branch = *remote_branch_iter;
             auto branch_tip = branch.resolve().target();
+            branch_tip = ref_oid_to_commit(branch_tip).id();
             for (auto & reference : non_remote_references) {
                 auto merge_base = repository.find_merge_base(branch_tip, reference);
                 if (best_branch.empty() || repository.is_descendant_of(merge_base, best_base)) {
@@ -256,7 +269,7 @@ struct repo_commits
         throw std::logic_error(branch_name + " is a remote branch but no remote fetchspecs matched");
     }
 
-    void missing(cppgit2::oid const & missing_object, cppgit2::oid const & commit)
+    bool missing(cppgit2::oid const & missing_object, cppgit2::oid const & commit)
     {
         // the remote containing branch should have the missing object
         std::string remote_name;
@@ -268,24 +281,25 @@ struct repo_commits
             remote_names_by_missing_commit[commit] = remote_name;
         }
         cerr << missing_object.to_hex_string() << " is missing; " << remote_name << " should contain it from " << commit.to_hex_string() << endl;
-        missing_objects_by_remote_name[remote_name].insert(missing_object);
+        return missing_objects_by_remote_name[remote_name].insert(missing_object).second;
     }
 
-    void missing(std::string const & missing_object, cppgit2::oid const & commit)
+    bool missing(std::string const & missing_object, cppgit2::oid const & commit)
     {
-        missing(cppgit2::oid(missing_object), commit);
+        return missing(cppgit2::oid(missing_object), commit);
     }
 
-    void missing(cppgit2::git_exception const &exc, cppgit2::oid const & commit)
+    bool missing(cppgit2::git_exception const &exc, cppgit2::oid const & commit)
     {
         string msg = exc.what();
+        // todo: check exception to verify it is a missing object
         size_t end = msg.rfind(')');
         size_t start = msg.rfind('(', end);
         if (end == std::string::npos || start == std::string::npos) {
             throw exc;
         }
         start += 1;
-        missing(msg.substr(start, end - start), commit);
+        return missing(msg.substr(start, end - start), commit);
     }
 
     bool fetch_missing()
@@ -416,6 +430,15 @@ struct repo_commits
         git_reference_iterator *c_ptr;
         git_reference *c_ref;
     } reference_iter;
+
+    cppgit2::commit ref_oid_to_commit(cppgit2::oid const & oid)
+    {
+        cppgit2::object object = repository.lookup_object(oid, cppgit2::object::object_type::any);
+        while (object.type() == cppgit2::object::object_type::tag) {
+            object = object.as_tag().target();
+        }
+        return object.as_commit().copy();
+    }
 };
 
 struct output_manager
@@ -917,15 +940,9 @@ int main(int argc, char **argv)
                 shuffle(commit_oids.begin(), commit_oids.end(), rng);
         
                 int commits_output = 0;
-                for (int commit_idx = 0; commits_output < max_commits_per_repo && commit_idx < commit_oids.size(); ++ commit_idx) {
+                for (int commit_idx = 0; commits_output < max_commits_per_repo && commit_idx < commit_oids.size(); ++ commit_idx) while ("missing objects") try {
                     cppgit2::commit commit;
-                    try {
-                        commit = repository.lookup_commit(commit_oids[commit_idx]);
-                    } catch (cppgit2::git_exception &exc) {
-                        repo_entry.missing(exc, commit_oids[commit_idx]);
-                        repo_entry.fetch_missing();
-                        commit = repository.lookup_commit(commit_oids[commit_idx]);
-                    }
+                    commit = repository.lookup_commit(commit_oids[commit_idx]);
         
                     static thread_local cppgit2::index possible_conflicts, merges;
                     cppgit2::diff diff;
@@ -953,13 +970,7 @@ int main(int argc, char **argv)
                         throw std::logic_error("unimplemented: multimerge");
                     }
         
-                    try {
-                    	diff.find_similar(); // finds renames, copies. can have options passed.
-                    } catch (cppgit2::git_exception &exc) {
-                        repo_entry.missing(exc, commit_oids[commit_idx]);
-                        repo_entry.fetch_missing();
-                    	diff.find_similar();
-                    }
+                    diff.find_similar(); // finds renames, copies. can have options passed.
                     // diff.to_string()
                     // diff.for_each([](const cppgit2::diff::delta &, float) {})
                     // diff.print(diff:format, [](const diff
@@ -988,6 +999,11 @@ int main(int argc, char **argv)
                         //if (input_size > max_input_length) {
                         //    input.resize(max_input_length);
                         //}
+                    break;
+                } catch (cppgit2::git_exception &exc) {
+                    repo_entry.missing(exc, commit_oids[commit_idx]);
+                    repo_entry.fetch_missing();
+                    continue;
                 }
             } catch (std::exception & e) {
                 std::cerr << *pathptr << ": " << e.what() << std::endl;
