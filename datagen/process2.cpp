@@ -150,7 +150,7 @@ struct repo_commits
                 }
                 try {
                     cppgit2::object object = ref_oid_to_commit_object(commit_oid);
-		    cppgit2::commit commit = object.as_commit();
+                    cppgit2::commit commit = object.as_commit();
                     commits.push_back(commit_oid);
                     size_t parent_count = commit.parent_count();
                     for (size_t parent_idx = 0; parent_idx < parent_count; ++ parent_idx) {
@@ -229,7 +229,13 @@ struct repo_commits
             auto branch_tip = branch.resolve().target();
             branch_tip = ref_oid_to_commit_object(branch_tip).id();
             for (auto & reference : non_remote_references) {
-                auto merge_base = repository.find_merge_base(branch_tip, reference);
+                cppgit2::oid merge_base;
+                try {
+                    merge_base = repository.find_merge_base(branch_tip, reference);
+                } catch (cppgit2::git_exception &exc) {
+                    // no merge base found
+                    continue;
+                }
                 if (best_branch.empty() || repository.is_descendant_of(merge_base, best_base)) {
                     best_base = merge_base;
                     best_branch = branch.name();
@@ -545,14 +551,14 @@ try_more:
         for (size_t diff_idx = 0; diffs_output < max_diffs_per_commit && diff_idx < diff_idcs.size(); ++ diff_idx)
         {
             size_t idx = diff_idcs[diff_idx];
-            const cppgit2::diff::delta & need_eeg_and_blockchain = (*diff)[idx];
+            const cppgit2::diff::delta & outer_need_eeg_and_blockchain = (*diff)[idx];
 
-            if (need_eeg_and_blockchain.status() == cppgit2::diff::delta::type::unmodified) {
+            if (outer_need_eeg_and_blockchain.status() == cppgit2::diff::delta::type::unmodified) {
                 continue;
             }
             
             more_input.clear();
-            if (!add_input(need_eeg_and_blockchain, true)) {
+            if (!add_input(outer_need_eeg_and_blockchain, true, true)) {
                 skip_input_diff_idcs.insert(idx);
                 continue;
             }
@@ -562,14 +568,27 @@ try_more:
             }
 
             std::shuffle(diff_subidcs.begin(), diff_subidcs.end(), rng);
-            for (size_t diff_subidx = 0; more_input.can_append(file_name_start.size() + file_name_end.size() + file_content_start.size() + file_content_end.size() + 16 + input_end.size()) && diff_subidx < diff_subidcs.size(); ++ diff_subidx)
-            {
-                size_t subidx = diff_subidcs[diff_subidx];
-                if (idx == subidx || skip_input_diff_idcs.count(subidx)) {
-                    continue;
+            while ("missing objects") {
+                repo_entry->fetch_missing();
+
+                for (size_t diff_subidx = 0; more_input.can_append(file_name_start.size() + file_name_end.size() + file_content_start.size() + file_content_end.size() + 16 + input_end.size()) && diff_subidx < diff_subidcs.size(); ++ diff_subidx)
+                {
+                    size_t subidx = diff_subidcs[diff_subidx];
+                    if (idx == subidx || skip_input_diff_idcs.count(subidx)) {
+                        continue;
+                    }
+                    const cppgit2::diff::delta & inner_need_eeg_and_blockchain = (*diff)[subidx];
+                    add_input(inner_need_eeg_and_blockchain, false, false);
                 }
-                const cppgit2::diff::delta & need_eeg_and_blockchain = (*diff)[subidx];
-                add_input(need_eeg_and_blockchain, false);
+               
+                if (repo_entry->fetch_missing()) {
+                    more_input.clear();
+                    bool initial_success = add_input(outer_need_eeg_and_blockchain, true, false);
+                    assert(initial_success);
+                    continue;
+                } else {
+                    break;
+                }
             }
 
             more_input.append(input_end);
@@ -625,7 +644,7 @@ try_more:
         return result;
     }
 
-    bool add_input(const cppgit2::diff::delta & need_eeg_and_blockchain, bool allow_empty)
+    bool add_input(const cppgit2::diff::delta & need_eeg_and_blockchain, bool allow_empty, bool only_unique)
     {
         auto old_file = need_eeg_and_blockchain.old_file();
         auto old_id = old_file.id();
@@ -653,7 +672,7 @@ try_more:
 
         blob content;
         if (!old_id.is_zero()) {
-            if (allow_empty && visited_oid_hashes.count(oid_hash()(old_id))) {
+            if (only_unique && visited_oid_hashes.count(oid_hash()(old_id))) {
                 return false;
             }
             try {
