@@ -26,5 +26,5 @@ fi
 # start grooming
 while true
 do
-	bash example_run_summarization.bash
+	bash -vx example_run_summarization.bash
 done
