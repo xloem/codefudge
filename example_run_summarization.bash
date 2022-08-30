@@ -3,13 +3,13 @@
 # example_run_summarization.py is a direct copy from the adapter-transformers repository
 
 MODEL=google/long-t5-tglobal-base
-EPOCHS=8
+EPOCHS=6
 GRAD_ACCUM=4
 
 # 16 GB VRAM
 BATCH_SIZE=1
 #MAX_OUT_LEN=2168 # without training embeddings, this worked for me for a few thousand steps
-MAX_OUT_LEN=2112 # with training embeddings; 2164 failed after 5434; 2158 eventually failed on 15109MB
+MAX_OUT_LEN=2144 # with training embeddings; 2164 failed after 5434; 2158 eventually failed on 15109MB
 # 8 GB VRAM
 #MAX_OUT_LEN=1152
 # 2 GB VRAM
@@ -23,7 +23,7 @@ WARMUP_STEPS=$((60*8))
 LEARNING_RATE_CONTINUING=0.5e-05
 LEARNING_RATE_STARTING=1.0e-04
 
-LEARNING_RATE_CONTINING=$(python3 <<< "print($LEARNING_RATE_CONTINUING * $GRAD_ACCUM * $BATCH_SIZE)")
+LEARNING_RATE_CONTINUING=$(python3 <<< "print($LEARNING_RATE_CONTINUING * $GRAD_ACCUM * $BATCH_SIZE)")
 LEARNING_RATE_STARTING=$(python3 <<< "print($LEARNING_RATE_STARTING * $GRAD_ACCUM * $BATCH_SIZE)")
 
 if [ -e "$OUTPUT_DIR"/old_tokenizer ]
