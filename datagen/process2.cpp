@@ -187,6 +187,7 @@ struct repo_commits
         ) {
             auto branch = *remote_branch_iter;
             auto branch_tip = branch.resolve().target();
+            assert(branch.resolve().name().compare(0, 5, "refs/") == 0); // below code assumes a refs/ prefix, remove prefix if not included in api
             branch_tip = ref_oid_to_commit_object(branch_tip).id();
             if (branch_tip == commit || repository.is_descendant_of(branch_tip, commit)) {
                 std::cerr << "Found remote branch " << branch.name() << " containing " << commit.to_hex_string() << std::endl;
@@ -194,6 +195,54 @@ struct repo_commits
             }
         }
         std::cerr << "Had some trouble finding which remote " << commit.to_hex_string() << " came from ..." << std::endl;
+
+        {
+            // i may have here implemented this comment block
+        // not found on any remote branches; it may be a remote tag the branch of which was rebased away. so, look for a shallow merge base.
+	// note: the mapping of branches to tags could be cached. the reason to do it when encountered would be because it could be harder to detect if a tip is on a remote if it has already been fetched.
+	// 		can likely create a remote ref with `git update-ref [-m reason] ref newvalue`, also takes stdin.
+	// 		can also be created with repository.create_reference(name, id, overwrite_flag, log_message)
+	// 		fetchspecs can also be specified to include tags
+	// 		tags for a remote shown by `git ls-remote --tags remote`
+	// 		remote refs can also be shown by remote.reference_advertisement_list(). gives oid and string name. tags likely start with 'refs/tags/'
+            std::string found_remote, found_remote_branch;
+            auto remote_list = repository.remote_list();
+            progressbar bar(remote_list.count());
+            for (auto const & remote_name : remote_list) {
+                auto remote = repository.lookup_remote(remote_name);
+                bar.update();
+                try {
+                    remote.connect(cppgit2::connection_direction::fetch);
+                    for (auto & remote_ref : remote.reference_advertisement_list()) {
+                        auto remote_refname = remote_ref.name();
+                        auto remote_refid = remote_ref.id();
+                        bool just_found = false;
+                        assert(remote_refname.compare(0, 5, "refs/") == 0);
+                        if (remote_refid == commit || repository.is_descendant_of(remote_refid, commit)) {
+                            found_remote = remote_refname;
+                            just_found = true;
+                        }
+                        if (just_found || remote_refname.compare(0, 10, "refs/tags/") == 0) {
+                            auto ref_subpath = remote_refname.substr(4);
+                            auto new_branchpath = "refs/remotes/" + remote_name + ref_subpath;
+                            repository.create_reference(new_branchpath, remote_refid, false, "Created remote branch " + new_branchpath + " to track more commits");
+                            if (just_found) {
+                                found_remote_branch = new_branchpath;
+                            }
+                        }
+                    }
+                    remote.disconnect();
+                } catch (...) {
+                    remote.disconnect();
+                    throw;
+                }
+            }
+            if (!found_remote.empty()) {
+                std::cerr << "Found " << commit.to_hex_string() << " on " << found_remote << " now as " << found_remote_branch <<  std::endl;
+                return remote_name(commit); // this could be just `return found_remote;`. the recursion here enforces that the caching works, crashing if it does not.
+            }
+        }
+
         static thread_local std::vector<cppgit2::oid> non_remote_references;
         non_remote_references.clear();
         for (
@@ -216,7 +265,7 @@ struct repo_commits
                 non_remote_references.push_back(branch_tip);
             }
         }
-        // not found on any remote branches; it may be a remote tag the branch of which was rebased away. so, look for a shallow merge base.
+        // look for a shallow merge base.
         std::string best_branch;
         cppgit2::oid best_base;
         cppgit2::oid mapped_reference;
