@@ -1003,6 +1003,7 @@ int main(int argc, char **argv)
     
                 if (commit_oids.size() < max_commits_per_repo * cycles_over_repos) {
                     std::cerr << "Skipping because it has few commits: " << *pathptr << std::endl;
+                    continue;
                 }
     
                 // this could simply select a random index repeatedly
