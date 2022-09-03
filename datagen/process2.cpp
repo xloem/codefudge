@@ -1027,6 +1027,8 @@ int main(int argc, char **argv)
 
     for (unsigned int repo_cycle = 0; repo_cycle < cycles_over_repos; ++ repo_cycle)
     {
+        bool combine_with_others;
+        int combined_count = 0;
         for (char **pathptr = &argv[1]; pathptr != &argv[argc]; ++ pathptr)
         {
             try {
@@ -1037,15 +1039,16 @@ int main(int argc, char **argv)
                 auto & repository = repo_entry.repository;
                 auto & commit_oids = repo_entry.commits;
     
-                if (commit_oids.size() < max_commits_per_repo * cycles_over_repos) {
-                    std::cerr << "Skipping because it has few commits: " << *pathptr << std::endl;
-                    continue;
-                }
+                combine_with_others = commit_oids.size() < max_commits_per_repo * cycles_over_repos; // treat repos with too few commits as roughly one large one
+                //if (commit_oids.size() < max_commits_per_repo * cycles_over_repos) {
+                //    std::cerr << "Skipping because it has few commits: " << *pathptr << std::endl;
+                //    continue;
+                //}
     
                 // this could simply select a random index repeatedly
                 shuffle(commit_oids.begin(), commit_oids.end(), rng);
         
-                int commits_output = 0;
+                int commits_output = combine_with_others ? combined_count : 0;
                 for (int commit_idx = 0; commits_output < max_commits_per_repo && commit_idx < commit_oids.size(); ++ commit_idx) while ("missing objects") try {
                     cppgit2::commit commit;
                     commit = repository.lookup_commit(commit_oids[commit_idx]);
@@ -1110,6 +1113,9 @@ int main(int argc, char **argv)
                     repo_entry.missing(exc, commit_oids[commit_idx]);
                     repo_entry.fetch_missing();
                     continue;
+                }
+                if (combine_with_others) {
+                    combined_count = commits_output;
                 }
             } catch (std::exception & e) {
                 std::cerr << *pathptr << ": " << e.what() << std::endl;
