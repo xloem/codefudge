@@ -199,12 +199,12 @@ struct repo_commits
         {
             // i may have here implemented this comment block
         // not found on any remote branches; it may be a remote tag the branch of which was rebased away. so, look for a shallow merge base.
-	// note: the mapping of branches to tags could be cached. the reason to do it when encountered would be because it could be harder to detect if a tip is on a remote if it has already been fetched.
-	// 		can likely create a remote ref with `git update-ref [-m reason] ref newvalue`, also takes stdin.
-	// 		can also be created with repository.create_reference(name, id, overwrite_flag, log_message)
-	// 		fetchspecs can also be specified to include tags
-	// 		tags for a remote shown by `git ls-remote --tags remote`
-	// 		remote refs can also be shown by remote.reference_advertisement_list(). gives oid and string name. tags likely start with 'refs/tags/'
+        // note: the mapping of branches to tags could be cached. the reason to do it when encountered would be because it could be harder to detect if a tip is on a remote if it has already been fetched.
+        //              can likely create a remote ref with `git update-ref [-m reason] ref newvalue`, also takes stdin.
+        //              can also be created with repository.create_reference(name, id, overwrite_flag, log_message)
+        //              fetchspecs can also be specified to include tags
+        //              tags for a remote shown by `git ls-remote --tags remote`
+        //              remote refs can also be shown by remote.reference_advertisement_list(). gives oid and string name. tags likely start with 'refs/tags/'
             std::string found_remote, found_remote_branch;
             auto remote_list = repository.remote_list();
             progressbar bar(remote_list.count());
@@ -648,6 +648,7 @@ try_more:
             lineout.Reset(linebuf);
             lineout.StartObject();
             more_input.data = input.data + more_input.data;
+            more_input.fix_unicode(); output.fix_unicode();
             lineout.String("input", 5); lineout.String(more_input.data.data(), more_input.data.size());
             lineout.String("label", 5); lineout.String(output.data.data(), output.data.size());
             auto commit_id = commit->id();
@@ -894,6 +895,41 @@ try_more:
             return tokenization->get_ids().size();
         }
         #endif
+
+        void char2unicode(uint8_t codepoint, char & byte_1, char & byte_2)
+        {
+            byte_1 = 0b11000000 | (codepoint >> 6);
+            byte_2 = 0b10000000 | (codepoint & 0b111111);
+        }
+
+        void fix_unicode()
+        {
+            if (data.size() > 0) {
+                char byte_1, byte_2;
+                if ((data[data.size() - 1] & 0b11000000) == 0b11000000) {
+                    // last byte would look like a unicode character that goes off the buffer
+                    char2unicode(data[data.size() - 1], byte_1, byte_2);
+                    data[data.size() - 1] = byte_1;
+                    data += byte_2;
+                } else if (data.size() > 1) {
+                    if ((data[data.size() - 2] & 0b11100000) == 0b11100000) {
+                        // second to last byte would look like a unicode character that goes off the buffer
+                        char2unicode(data[data.size() - 2], byte_1, byte_2);
+                        data[data.size() - 2] = byte_1;
+                        data.insert(data.end() - 1, byte_2);
+                        fix_unicode();
+                    } else if (data.size() > 2) {
+                        if ((data[data.size() - 3] & 0b11110000) == 0b11110000) {
+                            // third to last byte would look like a unicode character that goes off the buffer
+                            char2unicode(data[data.size() - 3], byte_1, byte_2);
+                            data[data.size() - 3] = byte_1;
+                            data.insert(data.end() - 2, byte_2);
+                            fix_unicode();
+                        }
+                    }
+                }
+            }
+        }
     };
 
     std::default_random_engine rng;
