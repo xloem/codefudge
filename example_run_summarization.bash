@@ -3,13 +3,13 @@
 # example_run_summarization.py is a direct copy from the adapter-transformers repository
 
 MODEL=google/long-t5-tglobal-base
-EPOCHS=6
+EPOCHS=5
 GRAD_ACCUM=4
 
 # 16 GB VRAM
 BATCH_SIZE=1
 #MAX_OUT_LEN=2168 # without training embeddings, this worked for me for a few thousand steps
-MAX_OUT_LEN=2144 # with training embeddings; 2164 failed after 5434; 2158 eventually failed on 15109MB
+MAX_OUT_LEN=2048 # with training embeddings; 2164 failed after 5434; 2144 eventually failed on 15109MB
 # 8 GB VRAM
 #MAX_OUT_LEN=1152
 # 2 GB VRAM
