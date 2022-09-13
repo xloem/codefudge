@@ -1,8 +1,10 @@
 import git, json, logging, os, requests
+from collections import defaultdict
 logging.basicConfig(level=logging.DEBUG)
 repo = git.Repo('.')
 
-GATEWAY='gateway.pinata.cloud'
+#GATEWAY='gateway.pinata.cloud'
+GATEWAY='dweb.link'
 PATH='w3put.log'
 SUBURL='fudge-long-t5-tglobal-base/trainer_state.json'
 
@@ -74,7 +76,7 @@ for url, (blob, commit) in zip(urls, blobs.values()):
             with open('hyperparm_cache.json.new', 'wt') as file:
                 json.dump(cache, file)
             os.rename('hyperparm_cache.json.new', 'hyperparm_cache.json')
-        except json.decoder.JSONDecodeError:
+        except requests.models.complexjson.JSONDecodeError:
             print(f'failed: {url}/{SUBURL}')
         except requests.exceptions.ConnectionError:
             print(f'could not connect to {GATEWAY}')
@@ -82,9 +84,23 @@ for url, (blob, commit) in zip(urls, blobs.values()):
 
 print(f'cache has {len(cache)} entries')
 
+seen_logs = set()
+
+data = []
+
 for url, commit in zip(urls, blobs.values()):
     try:
         state = cache[url]
+        #epoch_portion_per_step = state['num_train_epochs'] / state['max_steps']
+        steps_per_epoch = state['max_steps'] / state['num_train_epochs']
+        for prev, next in zip(state['log_history'][:-1], state['log_history'][1:]):
+            id = tuple(next.values())
+            if id in seen:
+                continue
+            seen.add(id)
+            lr = (prev['learning_rate'] + next['learning_rate']) / 2
+            loss_change_per_epoch = (prev['loss'] - next['loss']) * (next['step'] - prev['step']) / steps_per_epoch
+            data.append((steps_per_epoch, lr, loss_change_per_epoch))
     except:
         continue
 #example cache content:
