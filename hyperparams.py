@@ -96,13 +96,13 @@ for url, commit in zip(urls, blobs.values()):
         #epoch_portion_per_step = state['num_train_epochs'] / state['max_steps']
         steps_per_epoch = state['max_steps'] / state['num_train_epochs']
         for prev, next in zip(state['log_history'][:-1], state['log_history'][1:]):
-            id = tuple(next.values())
+            id = (tuple(prev.values()), tuple(next.values()))
             if id in seen:
                 continue
             seen.add(id)
             lr = (prev['learning_rate'] + next['learning_rate']) / 2
             loss_change_per_epoch = (prev['loss'] - next['loss']) * (next['step'] - prev['step']) / steps_per_epoch
-            data.append((steps_per_epoch, lr, loss_change_per_epoch))
+            data.append((steps_per_epoch, lr, loss_change_per_epoch, commit.authored_date))
     except:
         continue
 #example cache content:
