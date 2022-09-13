@@ -1,6 +1,7 @@
-import git, json, logging, os, requests
+import git, json, logging, os, requests, sys
+import tqdm
 from collections import defaultdict
-logging.basicConfig(level=logging.DEBUG)
+#logging.basicConfig(level=logging.DEBUG)
 repo = git.Repo('.')
 
 #GATEWAY='gateway.pinata.cloud'
@@ -51,7 +52,7 @@ while len(unvisited_commits):
         else:
             blobs[blob] = (blob, commit)
     
-print(f'found {len(visited_commits)} commits, {len(blobs)} blobs')
+print(f'found {len(visited_commits)} commits, {len(blobs)} blobs', file=sys.stderr)
 
 def blob2url(blob):
     content = blob.data_stream[-1].read()
@@ -69,42 +70,53 @@ except:
 updated_cache = False
 session = requests.Session()
 try:
-    for url, (blob, commit) in zip(urls, blobs.values()):
+    for url, (blob, commit) in zip(tqdm.tqdm(urls, desc='ipfs'), blobs.values()):
         if url not in cache and '://' in url:
             try:
                 cache[url] = session.get(url + '/' + SUBURL).json()
                 cache[url]['commit'] = commit.hexsha
             except requests.models.complexjson.JSONDecodeError:
-                print(f'failed: {url}/{SUBURL}')
+                print(f'failed: {url}/{SUBURL}', file=sys.stderr)
             except requests.exceptions.ConnectionError:
-                print(f'could not connect to {GATEWAY}')
+                print(f'could not connect to {GATEWAY}', file=sys.stderr)
                 break
 finally:
     with open('hyperparm_cache.json.new', 'wt') as file:
         json.dump(cache, file)
     os.rename('hyperparm_cache.json.new', 'hyperparm_cache.json')
 
-print(f'cache has {len(cache)} entries')
+print(f'cache has {len(cache)} entries', file=sys.stderr)
 
 seen_logs = set()
 
 data = []
 
-for url, commit in zip(urls, blobs.values()):
-    try:
+for url, (blob, commit) in zip(tqdm.tqdm(urls, desc='train states'), blobs.values()):
+    #try:
+        if url not in cache:
+            continue
         state = cache[url]
         #epoch_portion_per_step = state['num_train_epochs'] / state['max_steps']
         steps_per_epoch = state['max_steps'] / state['num_train_epochs']
-        for prev, next in zip(state['log_history'][:-1], state['log_history'][1:]):
+        log_history = state['log_history']
+        if 'total_flos' in log_history[-1]:
+            tail = log_history.pop()
+            samples_per_step = int(tail['train_samples_per_second'] / tail['train_steps_per_second'] + 0.5)
+            samples_per_second = tail['train_samples_per_second']
+            samples_per_epoch = tail['step'] * samples_per_step // tail['epoch']
+        for prev, next in zip(log_history[:-1], log_history[1:]):
             id = (tuple(prev.values()), tuple(next.values()))
-            if id in seen:
+            if id in seen_logs:
                 continue
-            seen.add(id)
+            seen_logs.add(id)
             lr = (prev['learning_rate'] + next['learning_rate']) / 2
             loss_change_per_epoch = (prev['loss'] - next['loss']) * (next['step'] - prev['step']) / steps_per_epoch
-            data.append((steps_per_epoch, lr, loss_change_per_epoch, commit.authored_date))
-    except:
-        continue
+            entry = (steps_per_epoch, lr, loss_change_per_epoch, commit.authored_date, next['step'])
+            data.append(entry)
+    #except:
+    #    continue
+for steps_per_epoch, lr, loss_change_per_epoch, authored_date, step in data:
+    print(steps_per_epoch, lr, loss_change_per_epoch, authored_date)
 #example cache content:
 # {
 #     "https://gateway.pinata.cloud/ipfs/bafybeigr7wwnxzkxd4sg542fhhwxo4vqvo5wwsj2q4w6tfvbp2rckurc3y": {
