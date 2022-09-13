@@ -68,19 +68,21 @@ except:
     cache = {}
 updated_cache = False
 session = requests.Session()
-for url, (blob, commit) in zip(urls, blobs.values()):
-    if url not in cache and '://' in url:
-        try:
-            cache[url] = session.get(url + '/' + SUBURL).json()
-            cache[url]['commit'] = commit.hexsha
-            with open('hyperparm_cache.json.new', 'wt') as file:
-                json.dump(cache, file)
-            os.rename('hyperparm_cache.json.new', 'hyperparm_cache.json')
-        except requests.models.complexjson.JSONDecodeError:
-            print(f'failed: {url}/{SUBURL}')
-        except requests.exceptions.ConnectionError:
-            print(f'could not connect to {GATEWAY}')
-            break
+try:
+    for url, (blob, commit) in zip(urls, blobs.values()):
+        if url not in cache and '://' in url:
+            try:
+                cache[url] = session.get(url + '/' + SUBURL).json()
+                cache[url]['commit'] = commit.hexsha
+            except requests.models.complexjson.JSONDecodeError:
+                print(f'failed: {url}/{SUBURL}')
+            except requests.exceptions.ConnectionError:
+                print(f'could not connect to {GATEWAY}')
+                break
+finally:
+    with open('hyperparm_cache.json.new', 'wt') as file:
+        json.dump(cache, file)
+    os.rename('hyperparm_cache.json.new', 'hyperparm_cache.json')
 
 print(f'cache has {len(cache)} entries')
 
