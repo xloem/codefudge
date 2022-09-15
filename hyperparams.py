@@ -10,7 +10,8 @@ GATEWAY='dweb.link'
 PATH='w3put.log'
 SUBURL='fudge-long-t5-tglobal-base/trainer_state.json'
 DATALEN = 51712
-EARLIEST = datetime.datetime.now().timestamp() - 60 * 60 * 24 * 30
+EARLIEST = datetime.datetime.now().timestamp() - 60 * 60 * 24 * 28
+GRAD_ACCUM_MAX = None #4
 
 def tree_lookup(tree, name):
     for subtree in tree.trees:
@@ -128,13 +129,16 @@ for url, (blob, commit) in zip(tqdm.tqdm(urls, desc='train states'), blobs.value
 #data.sort(key = l
 buckets = defaultdict(list)
 for steps_per_epoch, lr, loss, loss_change_per_epoch, authored_date, step in data:
+    print(steps_per_epoch, lr, loss_change_per_epoch, authored_date)
+    grad_accum = round(DATALEN / steps_per_epoch)
+    scaled_lr = lr / grad_accum
+    lr_exp = 10 ** int(math.log(scaled_lr) / math.log(10) - 0.5)
+    rounded_lr = round(scaled_lr / lr_exp * 4) * lr_exp / 4
+    #rounded_steps_per_epoch = round(steps_per_epoch / 1000) * 1000
     if authored_date < EARLIEST:
         continue
-    print(steps_per_epoch, lr, loss_change_per_epoch, authored_date)
-    lr_exp = 10 ** int(math.log(lr) / math.log(10))
-    rounded_lr = round(lr / lr_exp * 20) * lr_exp / 20
-    #rounded_steps_per_epoch = round(steps_per_epoch / 1000) * 1000
-    grad_accum = round(DATALEN / steps_per_epoch)
+    if GRAD_ACCUM_MAX is not None and grad_accum > GRAD_ACCUM_MAX:
+        continue
     buckets[(rounded_lr, grad_accum)].append((loss, loss_change_per_epoch, authored_date))
 options = [(rounded_lr, grad_accum, elems) for (rounded_lr, grad_accum), elems in buckets.items()]
 print('\n')
