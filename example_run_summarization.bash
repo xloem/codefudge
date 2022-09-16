@@ -4,7 +4,7 @@
 
 MODEL=google/long-t5-tglobal-base
 EPOCHS=1
-GRAD_ACCUM=$((RANDOM % 16))
+GRAD_ACCUM=$(((RANDOM % 12)+1))
 
 # 16 GB VRAM
 BATCH_SIZE=1
