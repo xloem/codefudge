@@ -3,8 +3,8 @@
 # example_run_summarization.py is a direct copy from the adapter-transformers repository
 
 MODEL=google/long-t5-tglobal-base
-EPOCHS=1
-GRAD_ACCUM=$(((RANDOM % 12)+1))
+GRAD_ACCUM=$(((RANDOM % 8)+1))
+EPOCHS=1 #$GRAD_ACCUM
 
 # 16 GB VRAM
 BATCH_SIZE=1
@@ -20,8 +20,10 @@ OUTPUT_DIR=fudge-"${MODEL##*/}"
 
 OPTIM=adafactor
 WARMUP_STEPS=$((60*8))
-LEARNING_RATE_CONTINUING=3.5e-06
+LEARNING_RATE_CONTINUING=1.75e-07
+LR_SCHEDULE_CONTINUING=cosine
 LEARNING_RATE_STARTING=1.0e-04
+LR_SCHEDULE_STARTING=cosine
 
 LEARNING_RATE_CONTINUING=$(python3 <<< "print($LEARNING_RATE_CONTINUING * $GRAD_ACCUM * $BATCH_SIZE)")
 LEARNING_RATE_STARTING=$(python3 <<< "print($LEARNING_RATE_STARTING * $GRAD_ACCUM * $BATCH_SIZE)")
@@ -49,7 +51,7 @@ then
 	DATAFILE="$REAL_DATAFILE"
 
 	echo continuing grooming of adapter ... machine learning models suffer much less than human beings when groomed for behaviors.
-	TRANSFORMERS_OFFLINE=1 python3 example_run_summarization_plus_embeddings.py --learning_rate "$LEARNING_RATE_CONTINUING" --optim "$OPTIM" --warmup_steps "$WARMUP_STEPS" $TOKENIZER_PARAMS --load_adapter "$OUTPUT_DIR"/summarization --gradient_accumulation_steps "$GRAD_ACCUM" --model_name_or_path "$MODEL" --do_train --output_dir "$OUTPUT_DIR" --per_device_train_batch_size="$BATCH_SIZE" --overwrite_output_dir --predict_with_generate --train_file "$DATAFILE" --train_adapter True --num_train_epochs "$EPOCHS" --max_target_length "$MAX_OUT_LEN"
+	TRANSFORMERS_OFFLINE=1 python3 example_run_summarization_plus_embeddings.py --learning_rate "$LEARNING_RATE_CONTINUING" --lr_scheduler_type "$LR_SCHEDULE_CONTINUING" --optim "$OPTIM" --warmup_steps "$WARMUP_STEPS" $TOKENIZER_PARAMS --load_adapter "$OUTPUT_DIR"/summarization --gradient_accumulation_steps "$GRAD_ACCUM" --model_name_or_path "$MODEL" --do_train --output_dir "$OUTPUT_DIR" --per_device_train_batch_size="$BATCH_SIZE" --overwrite_output_dir --predict_with_generate --train_file "$DATAFILE" --train_adapter True --num_train_epochs "$EPOCHS" --max_target_length "$MAX_OUT_LEN"
 else
 	if ! [ -e "$OUTPUT_DIR"/tokenizer ]
 	then
@@ -64,7 +66,7 @@ else
 	DATAFILE="$REAL_DATAFILE"
 
 	echo grooming a new adapter ... machine learning models suffer much less than human beings when groomed for behaviors.
-	TRANSFORMERS_OFFLINE=1 python3 example_run_summarization_plus_embeddings.py --adapter_config pfeiffer+inv --learning_rate "$LEARNING_RATE_STARTING" --optim "$OPTIM" --warmup_steps "$WARMUP_STEPS" $TOKENIZER_PARAMS --gradient_accumulation_steps "$GRAD_ACCUM" --model_name_or_path "$MODEL" --do_train --output_dir "$OUTPUT_DIR" --per_device_train_batch_size="$BATCH_SIZE" --overwrite_output_dir --predict_with_generate --train_file "$DATAFILE" --train_adapter True --num_train_epochs "$EPOCHS" --max_target_length "$MAX_OUT_LEN"
+	TRANSFORMERS_OFFLINE=1 python3 example_run_summarization_plus_embeddings.py --adapter_config pfeiffer+inv --learning_rate "$LEARNING_RATE_STARTING" --lr_scheduler_type "$LR_SCHEDULE_STARTING" --optim "$OPTIM" --warmup_steps "$WARMUP_STEPS" $TOKENIZER_PARAMS --gradient_accumulation_steps "$GRAD_ACCUM" --model_name_or_path "$MODEL" --do_train --output_dir "$OUTPUT_DIR" --per_device_train_batch_size="$BATCH_SIZE" --overwrite_output_dir --predict_with_generate --train_file "$DATAFILE" --train_adapter True --num_train_epochs "$EPOCHS" --max_target_length "$MAX_OUT_LEN"
 fi && if [ -e "$OUTPUT_DIR/old_tokenizer" ]
 then
   mv -v "$OUTPUT_DIR"/old_tokenizer "$OUTPUT_DIR"/old_tokenizer.used-"$(date --iso)"
