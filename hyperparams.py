@@ -12,7 +12,7 @@ SUBURL='fudge-long-t5-tglobal-base/trainer_state.json'
 DATALEN = 51712
 EARLIEST = datetime.datetime.now().timestamp() - 60 * 60 * 24 * 28
 GRAD_ACCUM_MAX = None #4
-SUBDIVISIONS = 1
+SUBDIVISION_DIGITS = 0
 
 def tree_lookup(tree, name):
     for subtree in tree.trees:
@@ -138,10 +138,11 @@ for idx, (steps_per_epoch, lr, loss, loss_change_per_epoch, authored_date, step)
     print(idx, steps_per_epoch, lr, loss_change_per_epoch, authored_date)
     grad_accum = round(DATALEN / steps_per_epoch)
     scaled_lr = lr / grad_accum
-    lr_exp = 10 ** round(math.log(scaled_lr) / math.log(10))
-    if round(scaled_lr / lr_exp * SUBDIVISIONS) == 0:
-        lr_exp = 10 ** round(math.log(scaled_lr) / math.log(10) - 1)
-    rounded_lr = round(scaled_lr / lr_exp * SUBDIVISIONS) * lr_exp / SUBDIVISIONS
+    base = 10/(10-0.1**(SUBDIVISION_DIGITS + math.log(9, 0.1)))
+    rounded_lr = base**round(math.log(scaled_lr, base))
+    digits_scale = math.ceil(-math.log(rounded_lr, 10)) + math.ceil(SUBDIVISION_DIGITS) - 1
+    rounded_lr = round(rounded_lr, digits_scale)
+
     #rounded_steps_per_epoch = round(steps_per_epoch / 1000) * 1000
     if authored_date < EARLIEST:
         continue
