@@ -3,8 +3,8 @@
 # example_run_summarization.py is a direct copy from the adapter-transformers repository
 
 MODEL=google/long-t5-tglobal-base
-GRAD_ACCUM=$(((RANDOM % 8)+1))
-EPOCHS=1 #$GRAD_ACCUM
+GRAD_ACCUM=$(((RANDOM % 4)+1))
+EPOCHS=$GRAD_ACCUM
 
 # 16 GB VRAM
 BATCH_SIZE=1
