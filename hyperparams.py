@@ -138,7 +138,9 @@ for idx, (steps_per_epoch, lr, loss, loss_change_per_epoch, authored_date, step)
     print(idx, steps_per_epoch, lr, loss_change_per_epoch, authored_date)
     grad_accum = round(DATALEN / steps_per_epoch)
     scaled_lr = lr / grad_accum
-    lr_exp = 10 ** int(math.log(scaled_lr) / math.log(10) - 1.5)
+    lr_exp = 10 ** round(math.log(scaled_lr) / math.log(10))
+    if round(scaled_lr / lr_exp * SUBDIVISIONS) == 0:
+        lr_exp = 10 ** round(math.log(scaled_lr) / math.log(10) - 1)
     rounded_lr = round(scaled_lr / lr_exp * SUBDIVISIONS) * lr_exp / SUBDIVISIONS
     #rounded_steps_per_epoch = round(steps_per_epoch / 1000) * 1000
     if authored_date < EARLIEST:
