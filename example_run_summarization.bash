@@ -3,7 +3,7 @@
 # example_run_summarization.py is a direct copy from the adapter-transformers repository
 
 MODEL=google/long-t5-tglobal-base
-GRAD_ACCUM=$(((RANDOM % 4)+1))
+GRAD_ACCUM=3 #$(((RANDOM % 3)+1))
 EPOCHS=$GRAD_ACCUM
 
 # 16 GB VRAM
@@ -20,7 +20,7 @@ OUTPUT_DIR=fudge-"${MODEL##*/}"
 
 OPTIM=adafactor
 WARMUP_STEPS=$((60*8))
-LEARNING_RATE_CONTINUING=2.0e-08
+LEARNING_RATE_CONTINUING=5.0e-09
 LR_SCHEDULE_CONTINUING=cosine
 LEARNING_RATE_STARTING=1.0e-04
 LR_SCHEDULE_STARTING=cosine
