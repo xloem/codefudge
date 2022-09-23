@@ -6,7 +6,7 @@ then
   ipfs daemon &
   daemonpid=$!
   sleep 15
-  ipfs get "$cid"
+  ipfs get --progress=true "$cid"
   kill $daemonpid
   cp -va "$cid"/fudge-* .
 else
